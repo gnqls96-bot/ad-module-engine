@@ -54,8 +54,24 @@ function findFont(): string | undefined {
   return candidates.find((f) => fs.existsSync(f));
 }
 
+/**
+ * FFmpeg에 글자 그리기 필터(drawtext)가 있는지.
+ * 맥 Homebrew의 기본 ffmpeg에는 빠져 있어서, 없으면 글자 없이 색 화면 + 움직이는 띠로만 만든다.
+ */
+let drawtextCache: boolean | undefined;
+export function hasDrawtext(): boolean {
+  if (drawtextCache === undefined) {
+    try {
+      drawtextCache = /\bdrawtext\b/.test(execFileSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+    } catch {
+      drawtextCache = false;
+    }
+  }
+  return drawtextCache;
+}
+
 export function makeDummyClip(out: string, spec: Pick<DummySpec, 'seconds' | 'color' | 'label'>, index: number, size = { w: 1080, h: 1920 }) {
-  const font = findFont();
+  const font = hasDrawtext() ? findFont() : undefined;
   const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
   const draw = font
     ? [
@@ -81,6 +97,7 @@ export function makeDummyClip(out: string, spec: Pick<DummySpec, 'seconds' | 'co
 
 /** outDir/{hook,bridge,story,offer}/ 에 더미 클립과 .meta.json 생성 */
 export function makeDemoSet(outDir: string, set: DummySpec[] = DEMO_SET) {
+  if (!hasDrawtext()) console.log('⚠ 이 ffmpeg에는 글자 그리기(drawtext)가 없어 더미 클립에 라벨 없이 색 화면만 만듭니다 (엔진 동작에는 영향 없음)');
   const files: string[] = [];
   set.forEach((spec, i) => {
     const dir = path.join(outDir, spec.kind);
