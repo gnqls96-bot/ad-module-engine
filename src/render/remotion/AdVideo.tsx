@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Freeze, interpolate, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { AdProps, Segment } from './props';
 import { timeCaptions, toLines } from './captions';
 
@@ -35,10 +35,13 @@ const SegmentView: React.FC<{ seg: Segment; first: boolean; props: AdProps }> = 
   const { brandKit } = props;
   const t = brandKit.transitionFrames;
   const fadeIn = first ? 1 : interpolate(frame, [0, t], [0, 1], { extrapolateRight: 'clamp' });
-  const captions = timeCaptions(seg.transcript, seg.durationInFrames, brandKit.caption.maxCharsPerLine);
+  const captions = seg.cues ?? timeCaptions(seg.transcript, seg.durationInFrames, brandKit.caption.maxCharsPerLine);
+  const pastVideo = frame >= seg.videoFrames;
+  const video = <FittedVideo src={seg.src} letterbox={seg.letterbox} volume={seg.voiceSrc ? seg.originalVolume : 1} />;
   return (
     <AbsoluteFill style={{ opacity: fadeIn }}>
-      <FittedVideo src={seg.src} letterbox={seg.letterbox} />
+      {pastVideo ? <Freeze frame={Math.max(0, seg.videoFrames - 1)}>{video}</Freeze> : video}
+      {seg.voiceSrc ? <Audio src={seg.voiceSrc} /> : null}
       {captions.map((c, i) => (
         <Sequence key={i} from={c.from} durationInFrames={c.durationInFrames} layout="none">
           <Caption text={c.text} props={props} />
@@ -50,19 +53,19 @@ const SegmentView: React.FC<{ seg: Segment; first: boolean; props: AdProps }> = 
 };
 
 /** 원본 비율을 유지한 채 출력 비율에 맞춘다: 뒤는 흐린 확대본, 앞은 잘림 없는 원본 */
-const FittedVideo: React.FC<{ src: string; letterbox: boolean }> = ({ src, letterbox }) =>
+const FittedVideo: React.FC<{ src: string; letterbox: boolean; volume: number }> = ({ src, letterbox, volume }) =>
   letterbox ? (
     <AbsoluteFill>
       <AbsoluteFill style={{ filter: 'blur(28px) brightness(0.55)', transform: 'scale(1.15)' }}>
         <OffthreadVideo src={src} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </AbsoluteFill>
       <AbsoluteFill>
-        <OffthreadVideo src={src} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        <OffthreadVideo src={src} volume={volume} muted={volume === 0} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
       </AbsoluteFill>
     </AbsoluteFill>
   ) : (
     <AbsoluteFill>
-      <OffthreadVideo src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <OffthreadVideo src={src} volume={volume} muted={volume === 0} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
     </AbsoluteFill>
   );
 

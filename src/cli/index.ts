@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { Workspace, audit, findBrand, findProduct } from '../core/workspace.js';
-import { Account, Aspect, BatchMode, DB, KIND_LABEL, ModuleKind } from '../core/types.js';
+import { Account, Aspect, BatchMode, DB, effectiveDuration, KIND_LABEL, ModuleKind } from '../core/types.js';
 import { AccessError, bootstrapAdmin, canSee, createAccount, findAccount, promoteToCommon, requireAdmin, setAccountStatus, visible } from '../core/access.js';
 import { createBrand, createProduct, mergeOffer, parseOffer } from '../core/catalog.js';
 import { findModule, registerModule, scanProductFolders, setReview } from '../core/modules.js';
@@ -300,7 +300,9 @@ mod
             코드: m.code,
             종류: KIND_LABEL[m.kind],
             제품: `${db.brands.find((x) => x.id === m.brandId)?.code}/${db.products.find((x) => x.id === m.productId)?.code}`,
-            길이: m.media.durationSec,
+            길이: effectiveDuration(m),
+            음성: m.voiceover ? m.voiceover.provider : '',
+            자막: m.captions ? m.captions.source : '',
             태그: Object.values(m.tags).filter(Boolean),
             호환: m.compatTags,
             심의: m.review,
@@ -578,6 +580,166 @@ program
       info(table(rows.map((j) => ({ 소재코드: j.materialCode, 상태: j.status, 파일: j.output ?? '', 오류: j.error ?? '', 소유자: nameOf(db, j.ownerId) }))));
     }),
   );
+
+// ── 음성 (TTS · 음성 맞춤 자막) ──────────────────────────────────
+const voice = program.command('voice').description('음성: TTS 제공자 설정·비교, Whisper 설치');
+const tierLabel: Record<string, string> = { free: '무료', 'free-quota': '무료 한도', paid: '유료', test: '시험용' };
+
+voice
+  .command('providers')
+  .description('TTS 제공자 목록과 준비 상태 (무료 → 유료 전환은 voice set)')
+  .action(async () => {
+    const { PROVIDERS } = await import('../voice/providers.js');
+    const { whisper } = await import('../voice/whisper.js');
+    info(
+      table(
+        PROVIDERS.map((p) => {
+          const a = p.available();
+          return { 제공자: p.id, 이름: p.label, 종류: tierLabel[p.tier], 상태: a.ok ? '사용 가능' : `준비 필요: ${a.reason}`, 기본목소리: p.defaultVoice || '(지정 필요)', 필요한설정: p.env.join(', ') };
+        }),
+      ),
+    );
+    const w = whisper.available();
+    info(`\n자막 타이밍 (Whisper, 무료): ${w.ok ? '사용 가능' : `준비 필요: ${w.reason}`}`);
+    info('\n준비 방법');
+    for (const p of PROVIDERS) if (p.tier !== 'test') info(`  ${p.id}: ${p.note}`);
+  });
+
+voice
+  .command('set')
+  .description('브랜드 음성 설정 (관리자). 예: 무료로 쓰다가 --provider elevenlabs 로 바꾸기')
+  .requiredOption('--brand <code>')
+  .option('--provider <id>', 'auto | melotts | macos-say | google | azure | elevenlabs')
+  .option('--voice <name>', '목소리 (제공자마다 다름: google ko-KR-Neural2-A, azure ko-KR-SunHiNeural, elevenlabs Voice ID)')
+  .option('--speed <n>', '말 빠르기 (1.0 = 보통)')
+  .option('--aligner <a>', '자막 타이밍: auto | whisper | estimate')
+  .option('--original-volume <n>', '내레이션을 넣을 때 원래 영상 소리 크기 0~1 (기본 0.15)')
+  .action(async (o) => {
+    const { getProvider } = await import('../voice/providers.js');
+    if (o.provider && o.provider !== 'auto') getProvider(o.provider);
+    act(({ db, me }) => {
+      requireAdmin(me, '음성 설정 변경');
+      const b = findBrand(db, o.brand);
+      const prev = b.voice ?? { provider: 'auto' };
+      const providerChanged = o.provider && o.provider !== prev.provider;
+      b.voice = {
+        ...prev,
+        ...(o.provider ? { provider: o.provider } : {}),
+        // 제공자를 바꾸면 이전 제공자의 목소리 이름은 맞지 않으므로 지운다
+        ...(providerChanged && !o.voice ? { voice: undefined } : {}),
+        ...(o.voice ? { voice: o.voice } : {}),
+        ...(o.speed ? { speed: Number(o.speed) } : {}),
+        ...(o.aligner ? { aligner: o.aligner } : {}),
+        ...(o.originalVolume !== undefined ? { originalAudioVolume: Number(o.originalVolume) } : {}),
+      };
+      audit(db, me, 'brand.voice', b.id, JSON.stringify(b.voice));
+      ok(`${b.code} 음성 설정: ${JSON.stringify(b.voice)}`);
+      if (providerChanged) info('  이미 만든 내레이션은 그대로예요. 새 제공자로 다시 만들려면: ame module voice all --brand ... --product ... --force');
+    });
+  });
+
+voice
+  .command('sample <text>')
+  .description('같은 문장을 여러 제공자로 만들어 품질 비교 (작업 공간 voice-samples/)')
+  .option('--providers <ids>', '비교할 제공자 (기본: 지금 쓸 수 있는 것 전부)')
+  .option('--voice <name>')
+  .action(async (text, o) => {
+    const w = needWs();
+    const { PROVIDERS, getProvider, normalizeAudio, tmpBase } = await import('../voice/providers.js');
+    const ids = list(o.providers) ?? PROVIDERS.filter((p) => p.tier !== 'test' && p.available().ok).map((p) => p.id);
+    if (!ids.length) throw new Error('쓸 수 있는 제공자가 없어요. `ame voice providers`로 준비 방법을 확인하세요.');
+    const dir = path.join(w.root, 'voice-samples');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '');
+    for (const id of ids) {
+      const p = getProvider(id);
+      try {
+        const r = await p.synthesize(text, { voice: o.voice ?? p.defaultVoice, outFile: tmpBase('sample') });
+        const out = path.join(dir, `${stamp}_${id}.m4a`);
+        normalizeAudio(r.rawFile, out);
+        ok(`${p.label}: ${w.rel(out)}`);
+      } catch (e: any) {
+        warn(`${p.label}: ${e.message}`);
+      }
+    }
+  });
+
+voice
+  .command('setup-whisper')
+  .description('무료 자막 타이밍(Whisper) 설치: whisper.cpp + 모델 다운로드 (맥에서 한 번)')
+  .action(async () => {
+    const { setupWhisper } = await import('../voice/whisper.js');
+    await setupWhisper((s) => info(s));
+  });
+
+const voiceTargets = (db: DB, me: Account, o: any, codes: string) => {
+  const b = findBrand(db, o.brand);
+  const p = findProduct(db, b, o.product);
+  const mods = codes === 'all'
+    ? db.modules.filter((m) => m.brandId === b.id && m.productId === p.id && canSee(me, m) && m.transcript.trim())
+    : list(codes)!.map((c) => findModule(db, me, b, p, c));
+  return { b, p, mods };
+};
+
+mod
+  .command('voice <codes>')
+  .description('모듈 대사로 TTS 내레이션 만들기 + 음성에 맞춘 자막 (codes: H001,H002 또는 all)')
+  .requiredOption('--brand <code>')
+  .requiredOption('--product <code>')
+  .option('--provider <id>', '이번만 다른 제공자로')
+  .option('--voice <name>')
+  .option('--speed <n>')
+  .option('--force', '이미 있어도 다시 만들기')
+  .action(async (codes, o) => {
+    const w = needWs();
+    const db = w.store.read();
+    const me = w.currentAccount(db, program.opts().as);
+    const { generateVoiceover, applyVoiceResult } = await import('../voice/service.js');
+    const { b, mods } = voiceTargets(db, me, o, codes);
+    let n = 0;
+    for (const m of mods) {
+      if (!o.force && m.voiceover && m.voiceover.text === m.transcript.trim()) {
+        info(`· ${m.code} 이미 있음 (${m.voiceover.provider}) — 다시 만들려면 --force`);
+        continue;
+      }
+      try {
+        const r = await generateVoiceover(w, db, me, b, m, { provider: o.provider, voice: o.voice, speed: o.speed ? Number(o.speed) : undefined });
+        w.store.transact((d) => {
+          applyVoiceResult(d, m.id, r);
+          audit(d, me, 'module.voice', m.id, `${r.voiceover!.provider}/${r.captions.source}`);
+        });
+        n++;
+        ok(`${m.code} 내레이션 ${r.voiceover!.durationSec.toFixed(1)}초 (${r.voiceover!.provider}, 목소리 ${r.voiceover!.voice || '기본'}) · 자막 ${r.captions.cues.length}개 (${r.captions.source})`);
+        r.warnings.forEach((x) => info(`    ⚠ ${x}`));
+      } catch (e: any) {
+        warn(`${m.code}: ${e.message}`);
+      }
+    }
+    info(`완료 ${n}/${mods.length}`);
+  });
+
+mod
+  .command('align <codes>')
+  .description('영상에 이미 있는 말소리(촬영본)에 자막 타이밍 맞추기 (Whisper)')
+  .requiredOption('--brand <code>')
+  .requiredOption('--product <code>')
+  .action(async (codes, o) => {
+    const w = needWs();
+    const db = w.store.read();
+    const me = w.currentAccount(db, program.opts().as);
+    const { alignOriginal, applyVoiceResult } = await import('../voice/service.js');
+    const { b, mods } = voiceTargets(db, me, o, codes);
+    for (const m of mods) {
+      try {
+        const r = await alignOriginal(w, me, b, m);
+        w.store.transact((d) => applyVoiceResult(d, m.id, r));
+        ok(`${m.code} 자막 ${r.captions.cues.length}개 (${r.captions.source})`);
+        r.warnings.forEach((x) => info(`    ⚠ ${x}`));
+      } catch (e: any) {
+        warn(`${m.code}: ${e.message}`);
+      }
+    }
+  });
 
 // ── 설정 보기·도구 ───────────────────────────────────────────────
 program

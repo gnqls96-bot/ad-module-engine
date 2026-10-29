@@ -20,7 +20,7 @@ description: 광고 영상 모듈(후킹·브릿지·스토리·오퍼)을 조�
 | --- | --- |
 | "영상 넣어놨어, 등록해줘" | `ame module scan --brand B --product P` → 경고(규격, 차단·주의 표현)를 요약해 전달 |
 | "이 파일 후킹으로 등록" | `ame module add <파일> --brand B --product P --kind hook --transcript "..." --hook-type ... --compat topic:...` |
-| "심의 통과시켜줘" (관리자) | `ame module review <코드|all> approve --brand B --product P` |
+| "심의 통과시켜줘" (관리자) | `ame module review <코드 또는 all> approve --brand B --product P` |
 | "후킹 테스트 만들어줘" | `ame batch create --mode hook-test --stories S00x --offers O00x [--bridge B00x] --length 30 --aspects 916,45` |
 | "오퍼별로 비교" | `--mode offer-test --hooks H00x --stories S00x` |
 | "렌더링 돌려줘" | `ame render <배치> --now` (오래 걸리면 `ame render <배치>` 후 `ame worker`를 백그라운드로) |
@@ -29,6 +29,11 @@ description: 광고 영상 모듈(후킹·브릿지·스토리·오퍼)을 조�
 | "팀원별 현황" (관리자) | `ame team` |
 | "팀장님 관리자 계정 만들어줘" (관리자) | `ame account create --name 팀장님 --role admin` |
 | "이 레퍼런스 저장해줘" | `ame reference add --title ... --source 스니핏 --run-days N --hook-type ...` |
+| "내레이션 넣어줘", "TTS로 읽혀줘" | `ame module voice <코드 또는 all> --brand B --product P` → 경고(음성이 영상보다 김 등) 전달 |
+| "촬영본 자막 맞춰줘" | `ame module align <코드 또는 all> --brand B --product P` |
+| "목소리 비교해보고 싶어" | `ame voice sample "문장"` → 작업 공간 voice-samples/ 파일 경로 안내 |
+| "유료로 바꿔줘", "일레븐랩스로" (관리자) | 키가 환경 변수에 있는지 `ame voice providers`로 확인 → `ame voice set --brand B --provider elevenlabs --voice <ID>` → `ame module voice all ... --force` |
+| "무료로 돌려줘" | `ame voice set --brand B --provider auto` |
 
 ## 레퍼런스를 반영해 후킹·대본을 쓸 때
 
@@ -45,3 +50,5 @@ description: 광고 영상 모듈(후킹·브릿지·스토리·오퍼)을 조�
 - 렌더링은 시간이 걸린다(짧은 영상 1편에 수십 초~수 분). 많이 돌릴 때는 개수를 먼저 알려준다.
 - 검사에서 제외된 조합은 `ame batch show`의 "이유"를 그대로 쉬운 말로 설명한다.
 - 결과 파일 경로는 작업 공간 기준 상대 경로로 알려준다.
+- API 키를 대화에 붙여넣으면 저장하지 말고, 사용자에게 셸 설정 파일(~/.zshrc)에 환경 변수로 넣도록 안내한다.
+- 유료 제공자(elevenlabs)로 바꾸기 전에 과금된다는 점을 한 줄로 알린다.

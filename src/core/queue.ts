@@ -21,17 +21,21 @@ export function enqueueBatch(db: DB, actor: Account, batch: Batch): { created: R
   let skipped = 0;
   for (const c of combos)
     for (const aspect of batch.aspects) {
-      const code = materialCode(brand, product, c, aspect, batch.targetLength, batch.version);
-      const existing = db.renderJobs.find((j) => j.materialCode === code && j.status !== 'failed');
+      // 같은 배치·조합·비율·배치 버전으로 이미 만든(또는 만드는 중인) 작업이 있으면 건너뛴다
+      const existing = db.renderJobs.find(
+        (j) => j.batchId === batch.id && j.combinationId === c.id && j.aspect === aspect && (j.batchVersion ?? 1) === batch.version && j.status !== 'failed',
+      );
       if (existing) {
         skipped++;
         continue;
       }
+      const code = uniqueMaterialCode(db, (v) => materialCode(brand, product, c, aspect, batch.targetLength, v), batch.version);
       const job: RenderJob = {
         id: newId('job'),
         batchId: batch.id,
         combinationId: c.id,
         aspect,
+        batchVersion: batch.version,
         materialCode: code,
         status: 'pending',
         attempts: 0,
@@ -44,6 +48,24 @@ export function enqueueBatch(db: DB, actor: Account, batch: Batch): { created: R
     }
   batch.status = 'queued';
   return { created, skipped };
+}
+
+/**
+ * 소재 코드는 작업 공간 전체에서 유일해야 한다 (매체 광고 이름으로 쓰고, 성과를 되짚는 열쇠라서).
+ * 다른 배치에서 같은 조합으로 이미 쓴 코드면 버전 숫자를 올린다. 실패한 작업의 코드는 다시 써도 된다.
+ */
+export function uniqueMaterialCode(db: DB, make: (version: number) => string, from: number): string {
+  const taken = new Set(db.renderJobs.filter((j) => j.status !== 'failed').map((j) => j.materialCode));
+  let v = from;
+  while (taken.has(make(v))) v++;
+  return make(v);
+}
+
+/** 이 배치·조합·비율의 현재 버전 작업 (CSV·상태 표시용) */
+export function currentJob(db: DB, batch: Batch, combinationId: string, aspect: string) {
+  return db.renderJobs
+    .filter((j) => j.batchId === batch.id && j.combinationId === combinationId && j.aspect === aspect && (j.batchVersion ?? 1) === batch.version)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
 }
 
 export function claimNext(db: DB, workerId: string, batchId?: string): RenderJob | undefined {

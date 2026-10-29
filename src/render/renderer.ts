@@ -5,7 +5,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
-import { ASPECTS, DB, RenderJob } from '../core/types.js';
+import { ASPECTS, DB, effectiveDuration, RenderJob } from '../core/types.js';
 import { loadBrandKit } from '../core/config.js';
 import { Workspace } from '../core/workspace.js';
 import { AdProps, FPS, Segment } from './remotion/props.js';
@@ -40,6 +40,11 @@ export function browserExecutable(): string | undefined {
   return undefined;
 }
 
+const MIME: Record<string, string> = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
+  '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.aiff': 'audio/aiff',
+};
+
 export class MediaServer {
   private server?: http.Server;
   port = 0;
@@ -56,7 +61,8 @@ export class MediaServer {
         }
         const size = fs.statSync(file).size;
         const range = req.headers.range;
-        const headers = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*' };
+        const type = MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
+        const headers = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*' };
         if (range) {
           const [s, e] = range.replace('bytes=', '').split('-');
           const start = Number(s);
@@ -92,15 +98,25 @@ export function buildProps(db: DB, job: RenderJob, media: MediaServer): { props:
   const product = db.products.find((p) => p.id === batch.productId)!;
   const ids = [combo.hookId, combo.bridgeId, combo.storyId, combo.offerId].filter(Boolean) as string[];
   const size = ASPECTS[job.aspect];
+  const origVol = brand.voice?.originalAudioVolume ?? 0.15;
   const segments: Segment[] = ids.map((id) => {
     const m = db.modules.find((x) => x.id === id)!;
+    // 대사가 바뀌었는데 자막을 다시 맞추지 않았으면 옛 자막 대신 추정 자막을 쓴다
+    const caps = m.captions && m.captions.text === m.transcript.trim() ? m.captions : undefined;
+    const voice = m.voiceover && m.voiceover.text === m.transcript.trim() ? m.voiceover : undefined;
+    const total = effectiveDuration({ media: m.media, voiceover: voice });
+    const f = (s: number) => Math.round(s * FPS);
     return {
       kind: m.kind,
       code: m.code,
       src: media.url(m.file),
-      durationInFrames: Math.max(1, Math.round(m.media.durationSec * FPS)),
+      durationInFrames: Math.max(1, f(total)),
+      videoFrames: Math.max(1, f(m.media.durationSec)),
       transcript: m.transcript,
       letterbox: Math.abs(m.media.width / m.media.height - size.width / size.height) > 0.01,
+      voiceSrc: voice ? media.url(voice.file) : undefined,
+      originalVolume: origVol,
+      cues: caps?.cues.map((c) => ({ text: c.text, from: f(c.start), durationInFrames: Math.max(1, f(c.end) - f(c.start)) })),
     };
   });
   const props: AdProps = {

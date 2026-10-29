@@ -90,6 +90,14 @@ export interface Brand {
   requireBatchApproval: boolean;
   /** 배치 안에서 같은 후킹 유형·화면 유형이 넘으면 안 되는 비율 (0~1) */
   diversityMaxShare: number;
+  /** 음성 설정. 비우면 auto (쓸 수 있는 무료 제공자 자동 선택) */
+  voice?: {
+    provider: string;
+    voice?: string;
+    speed?: number;
+    aligner?: 'auto' | 'whisper' | 'estimate';
+    originalAudioVolume?: number;
+  };
   createdBy: string;
   createdAt: string;
 }
@@ -125,6 +133,29 @@ export interface SpecIssue {
   message: string;
 }
 
+/** TTS로 만든 내레이션 (모듈 영상 위에 깔린다) */
+export interface Voiceover {
+  file: string; // 작업 공간 기준 상대 경로 (정규화된 .m4a)
+  provider: string;
+  voice: string;
+  durationSec: number;
+  /** 만들 때 쓴 대사. 대사가 바뀌면 다시 만들어야 하는지 판단하는 데 쓴다 */
+  text: string;
+  createdAt: string;
+}
+
+/** 자막 구간 (모듈 시작 기준 초) */
+export interface ModuleCaptions {
+  /** aligned: 받아쓰기로 맞춤 · provider: TTS가 준 타이밍 · estimated: 글자 수 비례 추정 */
+  source: 'aligned' | 'provider' | 'estimated';
+  /** 어떤 음성 기준인지: TTS 내레이션 / 모듈 영상 원래 소리 */
+  audio: 'voiceover' | 'original';
+  aligner?: string;
+  text: string;
+  cues: { text: string; start: number; end: number }[];
+  createdAt: string;
+}
+
 export interface Module extends Owned {
   id: string;
   code: string;
@@ -147,8 +178,16 @@ export interface Module extends Owned {
   reviewedBy?: string;
   /** 등록할 때 규칙 팩으로 자동 검사한 결과 */
   ruleFindings: RuleFinding[];
+  voiceover?: Voiceover;
+  captions?: ModuleCaptions;
   useCount: number;
   createdAt: string;
+}
+
+/** 조합 길이 계산용: 내레이션이 영상보다 길면 내레이션 길이(+여유)로 늘어난다 */
+export function effectiveDuration(m: Pick<Module, 'media' | 'voiceover'>): number {
+  const v = m.voiceover ? m.voiceover.durationSec + 0.25 : 0;
+  return Math.round(Math.max(m.media.durationSec, v) * 1000) / 1000;
 }
 
 export interface RuleFinding {
@@ -214,6 +253,9 @@ export interface RenderJob extends Owned {
   batchId: string;
   combinationId: string;
   aspect: Aspect;
+  /** 이 작업을 만들 때의 배치 버전 (오퍼를 바꾸면 배치 버전이 올라가 새 작업이 생긴다) */
+  batchVersion: number;
+  /** 전체 작업 공간에서 유일. 다른 배치에 같은 조합이 있으면 버전 숫자가 올라간다 */
   materialCode: string;
   status: JobStatus;
   output?: string;

@@ -1,5 +1,6 @@
 import { Account, Batch, DB } from './types.js';
 import { materialCode } from './naming.js';
+import { currentJob } from './queue.js';
 
 /** 배치 조합 목록 CSV (엑셀·구글 시트에서 바로 열 수 있게 BOM 포함) */
 export function batchCsv(db: DB, batch: Batch): string {
@@ -17,8 +18,9 @@ export function batchCsv(db: DB, batch: Batch): string {
     };
     const aspects = c.valid ? batch.aspects : [batch.aspects[0]];
     for (const aspect of aspects) {
-      const code = c.valid ? materialCode(brand, product, c, aspect, batch.targetLength, batch.version) : '';
-      const job = code ? db.renderJobs.find((j) => j.materialCode === code) : undefined;
+      // 실제 작업이 있으면 그 소재 코드(버전이 올라갔을 수 있음), 없으면 렌더링 전 예상 코드
+      const job = c.valid ? currentJob(db, batch, c.id, aspect) : undefined;
+      const code = job?.materialCode ?? (c.valid ? materialCode(brand, product, c, aspect, batch.targetLength, batch.version) : '');
       rows.push([
         code,
         c.valid ? aspect : '',

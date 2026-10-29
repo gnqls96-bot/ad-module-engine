@@ -2,6 +2,7 @@
 # 데모: 더미 클립으로 엔진 전체를 처음부터 끝까지 돌린다.
 #   npm run demo            → ./demo-workspace 에 생성, 렌더링 4편
 #   RENDER_LIMIT=0 npm run demo  → 렌더링 건너뛰기
+#   VOICE_PROVIDER=auto npm run demo → 실제 무료 TTS로 내레이션 (맥: 내장 음성/MeloTTS, 키가 있으면 구글·애저)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -52,6 +53,13 @@ if [ "$LIMIT" != "0" ]; then
   ame render demo_hooktest --limit 1 --now
   ame jobs --batch demo_hooktest
 fi
+
+echo "━━ 9. 음성: 내레이션 + 음성에 맞춘 자막 (VOICE_PROVIDER, 기본 mock = 시험용 톤)"
+ame voice providers | head -8
+ame voice set --brand DEMO --provider "${VOICE_PROVIDER:-mock}"
+ame module voice H003,B001,S001,O001 --brand DEMO --product SERUM
+ame batch create --brand DEMO --product SERUM --mode hook-test --hooks H003 --bridge B001 --stories S001 --offers O001 --length 15 --aspects 916 --name demo_voice
+if [ "$LIMIT" != "0" ]; then ame render demo_voice --now; fi
 
 ame batch export demo_hooktest
 ame team

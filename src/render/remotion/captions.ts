@@ -36,8 +36,24 @@ export function splitCaption(text: string, maxCharsPerLine: number): string[] {
 export function toLines(chunk: string, maxCharsPerLine: number): string[] {
   if (chunk.length <= maxCharsPerLine) return [chunk];
   const mid = chunk.length / 2;
+  // 가운데에 가까운 띄어쓰기에서 끊되, 한 글자 단어("세 방울"의 "세")가 줄 끝에 혼자 남지 않게 한다
+  // (한국어에서 한 글자 관형어·수사는 뒤 단어에 붙어 읽히므로, 줄 앞에 오는 것은 자연스럽다)
+  const wordLenAround = (i: number) => {
+    const before = chunk.slice(0, i).split(' ').at(-1)!.length;
+    const after = chunk.slice(i + 1).split(' ')[0].length;
+    return { before, after };
+  };
   let best = -1;
-  for (let i = 0; i < chunk.length; i++) if (chunk[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+  let bestScore = Infinity;
+  for (let i = 0; i < chunk.length; i++) {
+    if (chunk[i] !== ' ') continue;
+    const { before, after } = wordLenAround(i);
+    const score = Math.abs(i - mid) + (before === 1 ? 6 : 0) + (after > maxCharsPerLine ? 3 : 0);
+    if (score < bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
   if (best < 0) return [chunk.slice(0, Math.ceil(mid)), chunk.slice(Math.ceil(mid))];
   return [chunk.slice(0, best), chunk.slice(best + 1)];
 }

@@ -106,6 +106,7 @@ DEMO_SERUM_H014-B003-S007-O002_916_30_v1
 
 - 브릿지 없음 = `B000`. 비율: `916` `45` `11` `169`.
 - 같은 조합이라도 오퍼 데이터가 바뀌면 버전(`v2`)이 올라갑니다.
+- 소재 코드는 작업 공간 전체에서 하나뿐입니다. 다른 배치에서 같은 조합을 다시 렌더링하면(예: 내레이션을 넣은 버전) 다음 빈 버전 번호를 씁니다.
 - `src/core/naming.ts`의 `parseMaterialCode()`로 다시 읽을 수 있습니다 (4단계 성과 연동에서 사용).
 
 ---
@@ -174,6 +175,56 @@ ame reference promote <ID>            # 팀원 개인 → 공통 (관리자)
 
 ---
 
+## 음성: TTS 내레이션 + 음성에 맞춘 자막
+
+모듈 대사로 내레이션을 만들고, **실제 말하는 시점에 맞춰** 자막을 넣습니다. 무료로 시작해서, 품질이 아쉬우면 **설정 한 줄로 유료로 바꿉니다**.
+
+### 제공자 (무료 → 유료)
+
+| 제공자 | 종류 | 준비 | 특징 |
+| --- | --- | --- | --- |
+| `melotts` | 무료 | `pip install git+https://github.com/myshell-ai/MeloTTS.git` + `python -m unidic download` | 내 맥에서 실행, 한도 없음, MIT 라이선스(상업 사용 가능). 표현력은 보통 |
+| `macos-say` | 무료 | 설치 없음 (맥 내장 "유나" 등) | 가장 간단. 시안·확인용 |
+| `google` | 무료 한도 | `GOOGLE_TTS_API_KEY` | 월 무료 한도 안에서 사실상 무료. 품질 좋음. 한도 초과 시 자동 과금 → 예산 알림 권장 |
+| `azure` | 무료 한도 | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | 무료(F0) 등급 월 한도. 품질 좋음 |
+| `elevenlabs` | 유료 | `ELEVENLABS_API_KEY` + Voice ID | 표현력 최고. 글자 단위 타이밍을 직접 줘서 Whisper 없이도 자막이 정확 |
+
+- 기본값 `auto`는 **쓸 수 있는 무료 제공자**를 구글 → 애저 → MeloTTS → 맥 내장 순서로 자동 선택합니다. 유료(일레븐랩스)는 자동으로 고르지 않습니다 — 직접 설정했을 때만 과금됩니다.
+- API 키는 **환경 변수로만** 받습니다 (예: `~/.zshrc`에 `export GOOGLE_TTS_API_KEY=...`). 데이터 파일이나 저장소에는 절대 저장하지 않습니다.
+
+### 자막 타이밍
+
+| 방식 | 언제 | 정확도 |
+| --- | --- | --- |
+| 제공자 타이밍 | 일레븐랩스 | 정확 |
+| Whisper (무료, 내 맥에서) | 그 외 모든 TTS, 그리고 촬영본처럼 영상에 원래 말소리가 있을 때 | 정확 |
+| 추정 | Whisper 미설치 | 글자 수 비례 (대략) |
+
+자막 **글자는 항상 대본 원문**을 씁니다. Whisper가 "세 방울"을 "3방울"로 잘못 들어도 자막에는 대본대로 나오고, 받아쓰기 결과에서는 **시간만** 가져옵니다.
+
+### 사용법
+
+```bash
+ame voice providers                                  # 제공자별 준비 상태와 준비 방법
+ame voice setup-whisper                              # 무료 자막 타이밍 설치 (맥에서 한 번, 수 분)
+ame voice sample "바를수록 더 건조해지는 이유, 알고 계셨나요?"   # 쓸 수 있는 제공자 전부로 같은 문장 → 비교 듣기
+
+ame voice set --brand DEMO --provider auto           # 무료로 시작 (기본값)
+ame module voice all --brand DEMO --product SERUM    # 대사가 있는 모듈 전부 내레이션 + 자막
+ame module align S001 --brand DEMO --product SERUM   # 촬영본(원래 말소리)에 자막만 맞추기
+
+# 품질이 아쉬우면 → 유료로 전환
+export ELEVENLABS_API_KEY=...
+ame voice set --brand DEMO --provider elevenlabs --voice <Voice ID>
+ame module voice all --brand DEMO --product SERUM --force   # 새 목소리로 다시 만들기
+```
+
+- 내레이션이 영상보다 길면 마지막 장면을 멈춰서 채우고, 조합 길이 검사도 늘어난 길이로 계산합니다.
+- 내레이션을 넣으면 원래 영상 소리는 15%로 낮춥니다 (`--original-volume`로 조절, 0이면 끔).
+- 대사를 고치면 예전 내레이션·자막은 렌더링에 쓰지 않고, 다시 만들 때까지 추정 자막으로 대신합니다.
+
+---
+
 ## Claude에게 말로 시키기 (스킬)
 
 `skill/ad-module-engine/SKILL.md`가 "후킹 테스트 만들어줘", "가격 바꿔서 다시 뽑아줘" 같은 말을 `ame` 명령으로 바꾸는 방법을 Claude에게 알려줍니다.
@@ -238,6 +289,12 @@ src/render/
   remotion/                    Remotion 템플릿 (AdVideo, 자막, 오퍼 카드)
   renderer.ts                  번들, 로컬 미디어 서버, 렌더 1건
   worker.ts                    렌더 작업자
+src/voice/
+  types.ts                     TTS 제공자·타이밍 공통 형식
+  providers.ts                 melotts, macos-say, google, azure, elevenlabs, mock(시험용)
+  whisper.ts                   무료 받아쓰기 (whisper.cpp)
+  align.ts                     대본 ↔ 음성 타이밍 맞추기 (LCS), 자막 구간
+  service.ts                   모듈 내레이션·자막 생성
 src/tools/dummy.ts             더미 클립 생성기
 src/cli/                       명령어
 config/                        기본 설정 파일
@@ -252,6 +309,7 @@ docs/DEVLOG.md                 개발 기록
 | 단계 | 내용 | 시점 |
 | --- | --- | --- |
 | **1. 뼈대** ✅ | 엔진, 템플릿, 대기열, CLI, Claude 스킬 | 2026-10-29 |
+| **1.5 음성** ✅ | TTS 내레이션(무료 → 유료 전환), Whisper 음성 맞춤 자막 | 2026-10-29 |
 | 2. 레퍼런스 분석기 | 스니핏·메타 광고 라이브러리에서 저장한 광고를 받아쓰기 + 후킹/스토리/오퍼 구간 분석 + 분류 체계 확장 | 뼈대 직후 |
 | 3. 팀용 화면 | 웹 화면, 로그인, Supabase(DB·저장소), 조합 미리보기·승인 | 이직 전후 |
 | 4. 성과 시스템 | 소재 코드로 매체 성과 연동, 모듈별 성과·다음 배치 추천, 피로도 감지, 팀 대시보드 | 입사 후 |

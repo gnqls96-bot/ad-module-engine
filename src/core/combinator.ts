@@ -1,4 +1,4 @@
-import { Account, Aspect, ASPECTS, Batch, BatchMode, Brand, CheckResult, Combination, DB, Module, ModuleKind, Product } from './types.js';
+import { Account, Aspect, ASPECTS, Batch, BatchMode, Brand, CheckResult, Combination, DB, effectiveDuration, Module, ModuleKind, Product } from './types.js';
 import { newId, now } from './store.js';
 import { canSee, ownedBy, requireAdmin, requireCanEdit } from './access.js';
 import { comboCode } from './naming.js';
@@ -117,7 +117,7 @@ export function createBatch(ws: Workspace, db: DB, actor: Account, brand: Brand,
             storyId: s!.id,
             offerId: o!.id,
             comboCode: comboCode(h!, b, s!, o!),
-            durationSec: round(mods.reduce((t, m) => t + m.media.durationSec, 0)),
+            durationSec: round(mods.reduce((t, m) => t + effectiveDuration(m), 0)),
             checks,
             valid: false,
           });
@@ -172,7 +172,7 @@ export function checkReview(brand: Brand, mods: Module[]): CheckResult {
 
 // ── 검사 3: 길이 ────────────────────────────────────────────────
 export function checkLength(mods: Module[], target: 15 | 30 | 60): CheckResult {
-  const total = round(mods.reduce((t, m) => t + m.media.durationSec, 0));
+  const total = round(mods.reduce((t, m) => t + effectiveDuration(m), 0));
   const [lo, hi] = LENGTH_RANGE[target];
   if (total < lo || total > hi) return { name: 'length', status: 'fail', detail: `${total}초 (목표 ${target}초 범위 ${lo}~${hi}초 밖)` };
   return { name: 'length', status: 'pass', detail: `${total}초` };
@@ -197,7 +197,7 @@ export function applyDiversity(ws: Workspace, db: DB, brand: Brand, mode: BatchM
     const distinct = new Set(vals.filter(Boolean));
     if (distinct.size === 0) continue;
     if (distinct.size === 1) {
-      for (const c of candidates) push(notes, c.id, `${tax[axis]?.label ?? axis}가 모두 "${labelOf(tax, axis, [...distinct][0])}"로 같아요`);
+      for (const c of candidates) push(notes, c.id, `${tax[axis]?.label ?? axis}: 전부 "${labelOf(tax, axis, [...distinct][0])}" 한 종류`);
       continue;
     }
     const cap = Math.max(1, Math.floor(candidates.length * brand.diversityMaxShare));
@@ -209,7 +209,7 @@ export function applyDiversity(ws: Workspace, db: DB, brand: Brand, mode: BatchM
       count.set(v, n);
       if (n > cap) {
         failed.add(c.id);
-        push(notes, c.id, `${tax[axis]?.label ?? axis} "${labelOf(tax, axis, v)}"가 배치의 ${Math.round(brand.diversityMaxShare * 100)}%(${cap}개)를 넘어요`);
+        push(notes, c.id, `${tax[axis]?.label ?? axis}: "${labelOf(tax, axis, v)}" 비율이 배치의 ${Math.round(brand.diversityMaxShare * 100)}%(${cap}개) 초과`);
       }
     });
   }

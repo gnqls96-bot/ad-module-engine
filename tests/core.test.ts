@@ -109,3 +109,24 @@ describe('자막', () => {
     expect(t.reduce((s, c) => s + c.durationInFrames, 0)).toBe(90);
   });
 });
+
+describe('소재 코드 중복 방지', () => {
+  it('다른 배치에서 같은 조합 코드를 쓰면 버전이 올라간다', async () => {
+    const { uniqueMaterialCode } = await import('../src/core/queue');
+    const db = EMPTY_DB();
+    const make = (v: number) => `DEMO_SERUM_H001-B000-S001-O001_916_15_v${v}`;
+    expect(uniqueMaterialCode(db, make, 1)).toBe(make(1));
+    db.renderJobs.push({ materialCode: make(1), status: 'done' } as any);
+    expect(uniqueMaterialCode(db, make, 1)).toBe(make(2));
+    db.renderJobs.push({ materialCode: make(2), status: 'failed' } as any);
+    expect(uniqueMaterialCode(db, make, 1)).toBe(make(2)); // 실패한 작업의 코드는 다시 쓸 수 있음
+  });
+});
+
+describe('자막 줄바꿈', () => {
+  it('한 글자 단어가 줄 끝에 혼자 남지 않는다', () => {
+    const lines = toLines('토너로 결을 정돈하고 세 방울만 눌러 바르세요.', 16);
+    expect(lines[0].endsWith(' 세')).toBe(false);
+    expect(lines.join(' ')).toBe('토너로 결을 정돈하고 세 방울만 눌러 바르세요.');
+  });
+});
