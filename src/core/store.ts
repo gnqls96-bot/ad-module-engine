@@ -51,7 +51,16 @@ export class JsonStore implements Store {
   private writeRaw(db: DB) {
     const tmp = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-    fs.renameSync(tmp, this.file);
+    // 윈도우에서는 백신·검색 색인이 파일을 잠깐 잡고 있으면 교체가 실패할 수 있어 몇 번 다시 시도한다
+    for (let i = 0; ; i++) {
+      try {
+        fs.renameSync(tmp, this.file);
+        return;
+      } catch (e: any) {
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(e.code) || i >= 20) throw e;
+        sleep(50 * (i + 1));
+      }
+    }
   }
 
   /** CLI와 렌더 작업자가 동시에 쓰지 않도록 하는 단순 파일 잠금 */

@@ -1,12 +1,12 @@
 {
   "name": "ad-module-engine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "광고 영상 모듈(후킹·브릿지·스토리·오퍼) 조합 및 대량 렌더링 엔진",
   "scripts": {
     "ame": "tsx src/cli/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "demo": "bash scripts/demo.sh"
+    "demo": "node scripts/demo.mjs"
   },
   "author": "이후빈",
   "license": "UNLICENSED",

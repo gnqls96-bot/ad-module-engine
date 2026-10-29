@@ -61,9 +61,9 @@ export function registerModule(
   const base = path.basename(abs).replace(/^[HBSO]\d{3}_/, '');
   const dest = path.join(destDir, `${code}_${base}`);
   if (path.dirname(abs) === destDir || opts.move) {
-    fs.renameSync(abs, dest);
+    moveFile(abs, dest);
     const sc = abs.replace(/\.[^.]+$/, '.meta.json');
-    if (fs.existsSync(sc)) fs.renameSync(sc, dest.replace(/\.[^.]+$/, '.meta.json'));
+    if (fs.existsSync(sc)) moveFile(sc, dest.replace(/\.[^.]+$/, '.meta.json'));
   } else {
     fs.copyFileSync(abs, dest);
   }
@@ -130,6 +130,17 @@ export function findModule(db: DB, viewer: Account, brand: Brand, product: Produ
   const m = db.modules.find((x) => x.brandId === brand.id && x.productId === product.id && x.code === code.toUpperCase());
   if (!m || !canSee(viewer, m)) throw new Error(`${brand.code}/${product.code}에서 모듈 ${code}를 찾을 수 없어요.`);
   return m;
+}
+
+/** 이동. 다른 드라이브(윈도우 D: → C:, 외장 디스크 등)로는 이름 바꾸기가 안 되므로 복사 후 삭제 */
+function moveFile(from: string, to: string) {
+  try {
+    fs.renameSync(from, to);
+  } catch (e: any) {
+    if (e.code !== 'EXDEV') throw e;
+    fs.copyFileSync(from, to);
+    fs.rmSync(from);
+  }
 }
 
 const uniq = (a: string[]) => [...new Set(a.map((s) => s.trim()).filter(Boolean))];

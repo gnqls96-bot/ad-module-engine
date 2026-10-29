@@ -3,8 +3,9 @@
 광고 영상을 **후킹 · 브릿지 · 스토리 · 오퍼** 모듈로 나눠 관리하고, 규칙에 맞는 조합만 골라 **소재를 대량으로 렌더링**하는 엔진입니다.
 업종과 브랜드에 묶이지 않고, 본부 단위 여러 사용자가 함께 쓰는 것을 전제로 설계했습니다.
 
-> 현재 단계: **1단계 뼈대 (v0.1.0)** — 화면 없이 명령어(CLI)와 Claude 스킬로 끝까지 동작합니다.
+> 현재 단계: **v0.3.0** — 뼈대 + 음성(TTS·음성 맞춤 자막), **맥·윈도우 공통**. 화면 없이 명령어(CLI)와 Claude 스킬로 끝까지 동작합니다.
 > 개발 과정과 결정 이유는 [`docs/DEVLOG.md`](docs/DEVLOG.md)에 날짜별로 기록합니다.
+> push할 때마다 맥·윈도우·리눅스에서 자동 점검이 돕니다 (저장소의 **Actions** 탭).
 
 ---
 
@@ -36,28 +37,45 @@
 
 ---
 
-## 빠른 시작 (맥북)
+## 빠른 시작
 
-필요한 것: **Node.js 20 이상**, **FFmpeg** (`brew install node ffmpeg`)
+필요한 것: **Node.js 20 이상**, **FFmpeg**, **Git**. 설치 이후 명령어는 맥·윈도우 똑같습니다.
+
+| | 맥 (터미널) | 윈도우 (PowerShell) |
+| --- | --- | --- |
+| 준비물 설치 | `brew install node ffmpeg git` | `winget install OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git` 후 PowerShell 새로 열기 |
+| 설치 확인 | `node -v` · `ffmpeg -version` | 같음 |
 
 ```bash
 git clone https://github.com/gnqls96-bot/ad-module-engine.git
 cd ad-module-engine
 npm install
-npm test            # 단위 테스트
-npm run demo        # 더미 클립으로 전체 흐름 실행 → ./demo-workspace
+npm test                       # 단위 테스트
+npm run demo                   # 더미 클립으로 전체 흐름 → ./demo-workspace
+npm run demo -- --quick        # 렌더링 최소 (빠르게 확인)
+npm run demo -- --no-render    # 렌더링 없이 흐름만
 ```
 
-`npm run demo`는 조직·계정 생성부터 렌더링, 가격 변경 재렌더링, CSV 출력까지 한 번에 돌립니다.
-렌더링 없이 흐름만 보려면 `RENDER_LIMIT=0 npm run demo`.
+`npm run demo`는 조직·계정 생성부터 렌더링, 가격 변경 재렌더링, 내레이션 버전, CSV 출력까지 한 번에 돌립니다.
 
-어디서든 `ame` 명령으로 쓰려면:
+어디서든 `ame` 명령으로 쓰려면 `npm link` (이후 `ame --help`).
 
-```bash
-npm link            # 이후 ame --help
-```
+처음 렌더링할 때 Remotion이 렌더용 Chrome을 자동으로 내려받습니다. 이미 설치된 Chrome 렌더러를 쓰려면 환경 변수 `AME_BROWSER=<경로>`.
 
-처음 렌더링할 때 Remotion이 렌더용 Chrome을 자동으로 내려받습니다. 이미 설치된 Chrome 렌더러를 쓰려면 `AME_BROWSER=<경로>`.
+### 환경 변수 넣는 법 (API 키 등)
+
+| | 맥 | 윈도우 |
+| --- | --- | --- |
+| 계속 쓰기 | `~/.zshrc`에 `export GOOGLE_TTS_API_KEY=키` 추가 후 터미널 다시 열기 | `setx GOOGLE_TTS_API_KEY "키"` 후 PowerShell 다시 열기 |
+| 이번 창에서만 | `export GOOGLE_TTS_API_KEY=키` | `$env:GOOGLE_TTS_API_KEY="키"` |
+
+### 맥과 윈도우의 차이
+
+| | 맥 | 윈도우 |
+| --- | --- | --- |
+| 내장 음성 (무료) | `macos-say` (유나 등) | `windows-tts` (Heami 등, 한국어 음성 팩 설치 필요) |
+| Whisper 설치 | 소스를 받아 빌드 (Xcode 명령줄 도구 필요: `xcode-select --install`) | 실행 파일을 받아 풀기 (빌드 도구 필요 없음) |
+| MeloTTS 실행 이름 | `python3` | `python` (다르면 `AME_PYTHON`으로 지정) |
 
 ---
 
@@ -184,13 +202,14 @@ ame reference promote <ID>            # 팀원 개인 → 공통 (관리자)
 | 제공자 | 종류 | 준비 | 특징 |
 | --- | --- | --- | --- |
 | `melotts` | 무료 | `pip install git+https://github.com/myshell-ai/MeloTTS.git` + `python -m unidic download` | 내 맥에서 실행, 한도 없음, MIT 라이선스(상업 사용 가능). 표현력은 보통 |
-| `macos-say` | 무료 | 설치 없음 (맥 내장 "유나" 등) | 가장 간단. 시안·확인용 |
+| `macos-say` | 무료 | 설치 없음 (맥 내장 "유나" 등) | 맥에서 가장 간단. 시안·확인용 |
+| `windows-tts` | 무료 | 설치 없음. 한국어 음성 팩(Heami 등)만 추가: 설정 > 시간 및 언어 > 언어 및 지역 > 한국어 > 언어 옵션 > 음성 | 윈도우에서 가장 간단. 시안·확인용 |
 | `google` | 무료 한도 | `GOOGLE_TTS_API_KEY` | 월 무료 한도 안에서 사실상 무료. 품질 좋음. 한도 초과 시 자동 과금 → 예산 알림 권장 |
 | `azure` | 무료 한도 | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | 무료(F0) 등급 월 한도. 품질 좋음 |
 | `elevenlabs` | 유료 | `ELEVENLABS_API_KEY` + Voice ID | 표현력 최고. 글자 단위 타이밍을 직접 줘서 Whisper 없이도 자막이 정확 |
 
-- 기본값 `auto`는 **쓸 수 있는 무료 제공자**를 구글 → 애저 → MeloTTS → 맥 내장 순서로 자동 선택합니다. 유료(일레븐랩스)는 자동으로 고르지 않습니다 — 직접 설정했을 때만 과금됩니다.
-- API 키는 **환경 변수로만** 받습니다 (예: `~/.zshrc`에 `export GOOGLE_TTS_API_KEY=...`). 데이터 파일이나 저장소에는 절대 저장하지 않습니다.
+- 기본값 `auto`는 **쓸 수 있는 무료 제공자**를 구글 → 애저 → MeloTTS → 맥 내장 / 윈도우 내장 순서로 자동 선택합니다. 유료(일레븐랩스)는 자동으로 고르지 않습니다 — 직접 설정했을 때만 과금됩니다.
+- API 키는 **환경 변수로만** 받습니다 (넣는 법은 위 "환경 변수 넣는 법"). 데이터 파일이나 저장소에는 절대 저장하지 않습니다.
 
 ### 자막 타이밍
 
@@ -206,7 +225,8 @@ ame reference promote <ID>            # 팀원 개인 → 공통 (관리자)
 
 ```bash
 ame voice providers                                  # 제공자별 준비 상태와 준비 방법
-ame voice setup-whisper                              # 무료 자막 타이밍 설치 (맥에서 한 번, 수 분)
+ame voice setup-whisper                              # 무료 자막 타이밍 설치 (컴퓨터마다 한 번, 수 분, 약 1.6GB)
+ame voice setup-whisper --model small                # 사양이 낮은 PC: 작은 모델 (약 470MB, 정확도 조금 낮음)
 ame voice sample "바를수록 더 건조해지는 이유, 알고 계셨나요?"   # 쓸 수 있는 제공자 전부로 같은 문장 → 비교 듣기
 
 ame voice set --brand DEMO --provider auto           # 무료로 시작 (기본값)
@@ -229,7 +249,8 @@ ame module voice all --brand DEMO --product SERUM --force   # 새 목소리로 �
 
 `skill/ad-module-engine/SKILL.md`가 "후킹 테스트 만들어줘", "가격 바꿔서 다시 뽑아줘" 같은 말을 `ame` 명령으로 바꾸는 방법을 Claude에게 알려줍니다.
 
-- **Claude Code (맥북)**: `cp -r skill/ad-module-engine ~/.claude/skills/`
+- **Claude Code (맥)**: `cp -r skill/ad-module-engine ~/.claude/skills/`
+- **Claude Code (윈도우)**: `Copy-Item -Recurse skill\ad-module-engine "$env:USERPROFILE\.claude\skills\"`
 - **claude.ai**: `skill/ad-module-engine` 폴더를 zip으로 묶어 설정 → 기능 → 스킬에서 업로드
 
 ---
@@ -300,7 +321,9 @@ src/cli/                       명령어
 config/                        기본 설정 파일
 skill/ad-module-engine/        Claude 스킬
 tests/                         단위 테스트 (vitest)
-scripts/demo.sh                전체 흐름 데모
+scripts/demo.mjs               전체 흐름 데모 (맥·윈도우 공통)
+scripts/ci-voice-check.mjs     자동 점검: 내장 음성 → Whisper 자막 타이밍
+.github/workflows/ci.yml       자동 점검 (맥·윈도우·리눅스)
 docs/DEVLOG.md                 개발 기록
 ```
 
@@ -310,6 +333,7 @@ docs/DEVLOG.md                 개발 기록
 | --- | --- | --- |
 | **1. 뼈대** ✅ | 엔진, 템플릿, 대기열, CLI, Claude 스킬 | 2026-10-29 |
 | **1.5 음성** ✅ | TTS 내레이션(무료 → 유료 전환), Whisper 음성 맞춤 자막 | 2026-10-29 |
+| **맥·윈도우 공통** ✅ | 윈도우 내장 음성, Whisper 윈도우 설치, 데모·자동 점검 3개 운영체제 | 2026-10-29 |
 | 2. 레퍼런스 분석기 | 스니핏·메타 광고 라이브러리에서 저장한 광고를 받아쓰기 + 후킹/스토리/오퍼 구간 분석 + 분류 체계 확장 | 뼈대 직후 |
 | 3. 팀용 화면 | 웹 화면, 로그인, Supabase(DB·저장소), 조합 미리보기·승인 | 이직 전후 |
 | 4. 성과 시스템 | 소재 코드로 매체 성과 연동, 모듈별 성과·다음 배치 추천, 피로도 감지, 팀 대시보드 | 입사 후 |

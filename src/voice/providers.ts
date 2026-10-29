@@ -7,7 +7,7 @@ import { TimedText, TtsOptions, TtsProvider, TtsResult } from './types.js';
 
 /**
  * TTS 제공자 목록.
- *   무료        : melotts (맥에서 직접 실행), macos-say (맥 내장)
+ *   무료        : melotts (내 컴퓨터에서 실행), macos-say (맥 내장), windows-tts (윈도우 내장)
  *   무료 한도   : google (월 무료 한도), azure (월 무료 한도)
  *   유료        : elevenlabs
  *   시험용      : mock (네트워크·모델 없이 흐름만 확인)
@@ -19,6 +19,8 @@ import { TimedText, TtsOptions, TtsProvider, TtsResult } from './types.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const withExt = (f: string, ext: string) => (path.extname(f) ? f : `${f}.${ext}`);
 const has = (bin: string) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin], { stdio: 'ignore' }).status === 0;
+/** 파이썬 실행 이름: 윈도우는 보통 python, 맥·리눅스는 python3 (AME_PYTHON으로 지정 가능) */
+const python = () => process.env.AME_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
 const escXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 async function postJson(url: string, body: unknown, headers: Record<string, string>) {
@@ -36,13 +38,12 @@ const melotts: TtsProvider = {
   env: [],
   note: '설치: pip install git+https://github.com/myshell-ai/MeloTTS.git && python -m unidic download. 첫 실행 때 모델을 내려받음',
   available() {
-    const py = process.env.AME_PYTHON ?? 'python3';
-    const r = spawnSync(py, ['-c', 'import melo'], { stdio: 'ignore' });
+    const r = spawnSync(python(), ['-c', 'import melo'], { stdio: 'ignore' });
     return r.status === 0 ? { ok: true } : { ok: false, reason: 'MeloTTS가 설치되지 않음' };
   },
   async synthesize(text, opts) {
     const out = withExt(opts.outFile, 'wav');
-    const py = process.env.AME_PYTHON ?? 'python3';
+    const py = python();
     const script = path.join(HERE, 'melotts_tts.py');
     execFileSync(py, [script, '--text', text, '--out', out, '--speaker', opts.voice ?? 'KR', '--speed', String(opts.speed ?? 1)], { stdio: 'pipe' });
     return { rawFile: out };
@@ -63,7 +64,61 @@ const macosSay: TtsProvider = {
   async synthesize(text, opts) {
     const out = withExt(opts.outFile, 'aiff');
     const rate = Math.round(180 * (opts.speed ?? 1));
-    execFileSync('say', ['-v', opts.voice ?? 'Yuna', '-r', String(rate), '-o', out, text]);
+    const voice = opts.voice ?? 'Yuna';
+    const installed = execFileSync('say', ['-v', '?'], { encoding: 'utf8' });
+    if (!new RegExp(`^${voice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`, 'm').test(installed)) {
+      const ko = installed.split('\n').filter((l) => /ko_KR/.test(l)).map((l) => l.split(/\s{2,}/)[0].trim());
+      throw new Error(`맥에 "${voice}" 목소리가 없어요. ${ko.length ? `설치된 한국어 목소리: ${ko.join(', ')}` : '시스템 설정 > 손쉬운 사용 > 읽기 및 말하기 > 시스템 음성에서 한국어 음성(유나 등)을 추가하세요'}`);
+    }
+    execFileSync('say', ['-v', voice, '-r', String(rate), '-o', out, text]);
+    return { rawFile: out };
+  },
+};
+
+// ── 무료: 윈도우 내장 목소리 (System.Speech) ─────────────────────
+/**
+ * 윈도우에 기본으로 있는 음성 합성. 한국어 목소리(예: Microsoft Heami)는
+ * 설정 > 시간 및 언어 > 언어 및 지역에서 한국어를 추가하고 "음성" 항목을 설치하면 생긴다.
+ * 목소리를 지정하지 않으면 설치된 한국어 목소리를 자동으로 고른다.
+ */
+const windowsTts: TtsProvider = {
+  id: 'windows-tts',
+  label: '윈도우 내장 음성 (무료)',
+  tier: 'free',
+  defaultVoice: '',
+  env: [],
+  note: '설치 필요 없음. 설정 > 시간 및 언어 > 언어 및 지역 > 한국어 > 언어 옵션에서 "음성"을 설치하면 한국어 목소리(Heami 등)가 생김',
+  available() {
+    return process.platform === 'win32' ? { ok: true } : { ok: false, reason: '윈도우에서만 사용 가능' };
+  },
+  async synthesize(text, opts) {
+    const out = withExt(opts.outFile, 'wav');
+    // 대본·경로는 환경 변수로 넘겨 따옴표·특수문자 문제를 피한다
+    const ps = [
+      'Add-Type -AssemblyName System.Speech',
+      '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      'if ($env:AME_TTS_VOICE) { $s.SelectVoice($env:AME_TTS_VOICE) }',
+      'else {',
+      '  $ko = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -eq "ko-KR" } | Select-Object -First 1',
+      '  if ($ko) { $s.SelectVoice($ko.VoiceInfo.Name) } else { [Console]::Error.WriteLine("NO_KOREAN_VOICE") }',
+      '}',
+      '$s.Rate = [int]$env:AME_TTS_RATE',
+      '$s.SetOutputToWaveFile($env:AME_TTS_OUT)',
+      '$s.Speak($env:AME_TTS_TEXT)',
+      '$s.Dispose()',
+    ].join('\n');
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+      env: {
+        ...process.env,
+        AME_TTS_TEXT: text,
+        AME_TTS_OUT: out,
+        AME_TTS_VOICE: opts.voice ?? '',
+        AME_TTS_RATE: String(Math.max(-10, Math.min(10, Math.round(((opts.speed ?? 1) - 1) * 10)))),
+      },
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) throw new Error(`윈도우 음성 합성 실패: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}`);
+    if (/NO_KOREAN_VOICE/.test(r.stderr ?? '')) throw new Error('윈도우에 한국어 목소리가 없어요. ' + this.note);
     return { rawFile: out };
   },
 };
@@ -191,7 +246,7 @@ const mock: TtsProvider = {
   },
 };
 
-export const PROVIDERS: TtsProvider[] = [melotts, macosSay, google, azure, elevenlabs, mock];
+export const PROVIDERS: TtsProvider[] = [melotts, macosSay, windowsTts, google, azure, elevenlabs, mock];
 
 export function getProvider(id: string): TtsProvider {
   const p = PROVIDERS.find((x) => x.id === id);
@@ -201,7 +256,7 @@ export function getProvider(id: string): TtsProvider {
 
 /**
  * provider가 'auto'면 쓸 수 있는 무료 제공자를 품질 순으로 고른다:
- * 구글(무료 한도) → 애저(무료 한도) → MeloTTS → 맥 내장.
+ * 구글(무료 한도) → 애저(무료 한도) → MeloTTS → 맥 내장 / 윈도우 내장.
  * 유료(일레븐랩스)는 자동으로 고르지 않는다 (명시적으로 설정했을 때만 과금).
  */
 export function resolveProvider(id: string | undefined): TtsProvider {
@@ -211,7 +266,7 @@ export function resolveProvider(id: string | undefined): TtsProvider {
     if (!a.ok) throw new Error(`${p.label}를 쓸 수 없어요: ${a.reason}. 준비 방법: ${p.note}`);
     return p;
   }
-  for (const pid of ['google', 'azure', 'melotts', 'macos-say']) {
+  for (const pid of ['google', 'azure', 'melotts', 'macos-say', 'windows-tts']) {
     const p = getProvider(pid);
     if (p.available().ok) return p;
   }

@@ -1,0 +1,79 @@
+# 맥·윈도우·리눅스에서 자동 점검 (push할 때마다)
+#   1) 타입 검사 + 단위 테스트
+#   2) 데모 전체 흐름 + 실제 렌더링 1편 + 내레이션 버전 1편
+#   3) 내장 음성 → Whisper 설치 → 자막 타이밍 맞춤
+# 결과: GitHub 저장소의 Actions 탭
+name: 자동 점검
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      AME_WHISPER_DIR: ${{ github.workspace }}/../whisper
+      AME_CONCURRENCY: '2'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: FFmpeg 설치 (맥)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: FFmpeg 설치 (윈도우)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: FFmpeg 설치 (리눅스)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: 타입 검사
+        run: npx tsc --noEmit
+
+      - name: 단위 테스트
+        run: npm test
+
+      - name: 데모 (렌더링 포함, 최소)
+        run: npm run demo -- --quick --workspace ${{ github.workspace }}/../ws
+
+      - name: 렌더 결과 확인
+        shell: bash
+        run: |
+          set -e
+          n=$(find "${{ github.workspace }}/../ws/brands" -name '*.mp4' -path '*renders*' | wc -l)
+          echo "렌더링된 영상: $n편"
+          test "$n" -ge 2
+
+      - name: Whisper 설치 (가장 작은 모델)
+        run: node bin/ame.mjs -w ${{ github.workspace }}/../ws voice setup-whisper --model tiny
+
+      - name: 내장 음성 → Whisper 자막 타이밍
+        run: node scripts/ci-voice-check.mjs ${{ github.workspace }}/../ws
+
+      - name: 결과 영상 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renders-${{ matrix.os }}
+          path: ${{ github.workspace }}/../ws/brands/**/renders/**/*.mp4
+          if-no-files-found: ignore
+          retention-days: 7

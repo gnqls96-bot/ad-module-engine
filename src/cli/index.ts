@@ -599,8 +599,9 @@ voice
         }),
       ),
     );
+    const { whisperModel } = await import('../voice/whisper.js');
     const w = whisper.available();
-    info(`\n자막 타이밍 (Whisper, 무료): ${w.ok ? '사용 가능' : `준비 필요: ${w.reason}`}`);
+    info(`\n자막 타이밍 (Whisper, 무료, 모델 ${whisperModel()}): ${w.ok ? '사용 가능' : `준비 필요: ${w.reason}`}`);
     info('\n준비 방법');
     for (const p of PROVIDERS) if (p.tier !== 'test') info(`  ${p.id}: ${p.note}`);
   });
@@ -666,10 +667,11 @@ voice
 
 voice
   .command('setup-whisper')
-  .description('무료 자막 타이밍(Whisper) 설치: whisper.cpp + 모델 다운로드 (맥에서 한 번)')
-  .action(async () => {
+  .description('무료 자막 타이밍(Whisper) 설치: whisper.cpp + 모델 다운로드 (이 컴퓨터에서 한 번, 맥·윈도우 공통)')
+  .option('--model <name>', 'large-v3-turbo(기본, 약 1.6GB) | medium | small(약 470MB, 저사양 PC) | base | tiny')
+  .action(async (o) => {
     const { setupWhisper } = await import('../voice/whisper.js');
-    await setupWhisper((s) => info(s));
+    await setupWhisper({ model: o.model, log: (s) => info(s) });
   });
 
 const voiceTargets = (db: DB, me: Account, o: any, codes: string) => {
@@ -697,6 +699,7 @@ mod
     const { generateVoiceover, applyVoiceResult } = await import('../voice/service.js');
     const { b, mods } = voiceTargets(db, me, o, codes);
     let n = 0;
+    let failed = 0;
     for (const m of mods) {
       if (!o.force && m.voiceover && m.voiceover.text === m.transcript.trim()) {
         info(`· ${m.code} 이미 있음 (${m.voiceover.provider}) — 다시 만들려면 --force`);
@@ -712,10 +715,12 @@ mod
         ok(`${m.code} 내레이션 ${r.voiceover!.durationSec.toFixed(1)}초 (${r.voiceover!.provider}, 목소리 ${r.voiceover!.voice || '기본'}) · 자막 ${r.captions.cues.length}개 (${r.captions.source})`);
         r.warnings.forEach((x) => info(`    ⚠ ${x}`));
       } catch (e: any) {
+        failed++;
         warn(`${m.code}: ${e.message}`);
       }
     }
     info(`완료 ${n}/${mods.length}`);
+    if (failed) process.exitCode = 1;
   });
 
 mod
@@ -736,6 +741,7 @@ mod
         ok(`${m.code} 자막 ${r.captions.cues.length}개 (${r.captions.source})`);
         r.warnings.forEach((x) => info(`    ⚠ ${x}`));
       } catch (e: any) {
+        process.exitCode = 1;
         warn(`${m.code}: ${e.message}`);
       }
     }
