@@ -1,0 +1,8 @@
+node_modules/
+.ame/
+workspace/
+demo-workspace/
+*.mp4
+!docs/**/*.mp4
+.DS_Store
+.env

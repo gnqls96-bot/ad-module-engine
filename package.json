@@ -1,0 +1,40 @@
+{
+  "name": "ad-module-engine",
+  "version": "0.1.0",
+  "description": "광고 영상 모듈(후킹·브릿지·스토리·오퍼) 조합 및 대량 렌더링 엔진",
+  "scripts": {
+    "ame": "tsx src/cli/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo": "bash scripts/demo.sh"
+  },
+  "author": "이후빈",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/cli": "4.0.539",
+    "@remotion/fonts": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "commander": "^15.0.0",
+    "pretendard": "^1.3.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.539",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^18.3.31",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ame": "./bin/ame.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

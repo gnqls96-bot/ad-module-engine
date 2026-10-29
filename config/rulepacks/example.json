@@ -1,0 +1,16 @@
+{
+  "id": "example",
+  "name": "예시 규칙 팩",
+  "description": "구조 확인용 예시. 실제 업종 규칙이 아니며, 담당 브랜드가 정해지면 업종별 팩을 새로 만든다.",
+  "blocked": [
+    { "phrase": "완치", "reason": "치료 효과를 단정하는 표현" },
+    { "phrase": "100% 효과", "reason": "효과를 보장하는 표현" },
+    { "phrase": "부작용 없", "reason": "안전성을 단정하는 표현" }
+  ],
+  "caution": [
+    { "phrase": "최고", "reason": "최상급 표현은 근거 자료 필요" },
+    { "phrase": "유일", "reason": "유일성 주장은 근거 자료 필요" },
+    { "phrase": "1위", "reason": "순위 표기는 출처·기간 표기 필요" }
+  ],
+  "requiredNotices": ["광고"]
+}

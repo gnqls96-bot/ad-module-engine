@@ -1,0 +1,22 @@
+{
+  "$comment": "브랜드 키트 기본값. 브랜드마다 덮어쓴다. 색은 #RRGGBB, 크기는 1080px 너비 기준.",
+  "fontFamily": "Pretendard",
+  "caption": {
+    "fontSize": 58,
+    "fontWeight": 800,
+    "color": "#FFFFFF",
+    "strokeColor": "#000000",
+    "strokeWidth": 8,
+    "highlightColor": "#FFE14D",
+    "positionFromBottom": 0.24,
+    "maxCharsPerLine": 16
+  },
+  "offerCard": {
+    "background": "#FFFFFF",
+    "textColor": "#111111",
+    "accentColor": "#E8322F",
+    "radius": 36
+  },
+  "transitionFrames": 6,
+  "adNotice": "광고"
+}

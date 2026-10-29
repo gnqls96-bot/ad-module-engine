@@ -1,0 +1,8 @@
+{
+  "id": "empty",
+  "name": "규칙 없음",
+  "description": "업종 규칙을 적용하지 않는 기본 팩",
+  "blocked": [],
+  "caution": [],
+  "requiredNotices": []
+}

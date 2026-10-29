@@ -1,0 +1,51 @@
+{
+  "$comment": "업종 무관 기본 분류 체계. 조직(workspace/config/taxonomy.json)과 브랜드(brand.taxonomyOverride)가 값을 추가하거나 덮어쓴다.",
+  "hookType": {
+    "label": "후킹 유형",
+    "values": {
+      "paradox": "역설",
+      "myth-bust": "상식반전",
+      "authority": "권위자",
+      "secret": "비밀공개",
+      "question": "질문",
+      "pain": "문제공감",
+      "result-first": "결과먼저",
+      "comparison": "비교"
+    }
+  },
+  "storyType": {
+    "label": "스토리 구조",
+    "values": {
+      "problem-first": "문제먼저형",
+      "effect-first": "효과먼저형",
+      "testimonial": "후기형",
+      "demo": "시연형",
+      "comparison": "비교형"
+    }
+  },
+  "offerType": {
+    "label": "오퍼 방식",
+    "values": {
+      "discount": "할인",
+      "limited-qty": "한정수량",
+      "limited-time": "기간한정",
+      "gift": "사은품",
+      "free-trial": "무료체험",
+      "bundle": "묶음"
+    }
+  },
+  "visualType": {
+    "label": "화면 유형",
+    "values": {
+      "selfcam": "셀프캠",
+      "interview": "인터뷰",
+      "product-closeup": "제품 클로즈업",
+      "ai-generated": "AI 생성",
+      "motion-graphic": "모션그래픽"
+    }
+  },
+  "target": {
+    "label": "타겟",
+    "values": {}
+  }
+}
