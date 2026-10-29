@@ -21,7 +21,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     env:
-      AME_WHISPER_DIR: ${{ github.workspace }}/../whisper
       AME_CONCURRENCY: '2'
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +42,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: 작업 폴더 설정
+        shell: bash
+        run: |
+          echo "WS=${RUNNER_TEMP}/ws" >> "$GITHUB_ENV"
+          echo "AME_WHISPER_DIR=${RUNNER_TEMP}/whisper" >> "$GITHUB_ENV"
+
       - name: 패키지 설치
         run: npm ci
 
@@ -53,27 +58,27 @@ jobs:
         run: npm test
 
       - name: 데모 (렌더링 포함, 최소)
-        run: npm run demo -- --quick --workspace ${{ github.workspace }}/../ws
+        run: node scripts/ci-run.mjs 데모 node scripts/demo.mjs --quick --workspace "${{ env.WS }}"
 
       - name: 렌더 결과 확인
         shell: bash
         run: |
           set -e
-          n=$(find "${{ github.workspace }}/../ws/brands" -name '*.mp4' -path '*renders*' | wc -l)
+          n=$(find "$WS/brands" -name '*.mp4' -path '*renders*' | wc -l)
           echo "렌더링된 영상: $n편"
           test "$n" -ge 2
 
       - name: Whisper 설치 (가장 작은 모델)
-        run: node bin/ame.mjs -w ${{ github.workspace }}/../ws voice setup-whisper --model tiny
+        run: node scripts/ci-run.mjs "Whisper 설치" node bin/ame.mjs -w "${{ env.WS }}" voice setup-whisper --model tiny
 
       - name: 내장 음성 → Whisper 자막 타이밍
-        run: node scripts/ci-voice-check.mjs ${{ github.workspace }}/../ws
+        run: node scripts/ci-run.mjs "음성 점검" node scripts/ci-voice-check.mjs "${{ env.WS }}"
 
       - name: 결과 영상 보관
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: renders-${{ matrix.os }}
-          path: ${{ github.workspace }}/../ws/brands/**/renders/**/*.mp4
+          path: ${{ env.WS }}/brands/**/renders/**/*.mp4
           if-no-files-found: ignore
           retention-days: 7
