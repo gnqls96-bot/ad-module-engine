@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { ModuleKind, ModuleTags } from '../core/types.js';
+import { requireTool } from '../core/tools.js';
 
 /**
  * 더미 클립 생성기.
@@ -97,6 +98,7 @@ export function makeDummyClip(out: string, spec: Pick<DummySpec, 'seconds' | 'co
 
 /** outDir/{hook,bridge,story,offer}/ 에 더미 클립과 .meta.json 생성 */
 export function makeDemoSet(outDir: string, set: DummySpec[] = DEMO_SET) {
+  requireTool('ffmpeg');
   if (!hasDrawtext()) console.log('⚠ 이 ffmpeg에는 글자 그리기(drawtext)가 없어 더미 클립에 라벨 없이 색 화면만 만듭니다 (엔진 동작에는 영향 없음)');
   const files: string[] = [];
   set.forEach((spec, i) => {

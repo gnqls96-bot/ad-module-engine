@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { TimedText, TtsOptions, TtsProvider, TtsResult } from './types.js';
+import { requireTool } from '../core/tools.js';
 
 /**
  * TTS 제공자 목록.
@@ -275,6 +276,7 @@ export function resolveProvider(id: string | undefined): TtsProvider {
 
 /** 어떤 제공자 결과든 같은 형식으로: 48kHz 스테레오 AAC, 음량 표준화 (광고 플랫폼 권장 -16 LUFS 근처) */
 export function normalizeAudio(src: string, dest: string) {
+  requireTool('ffmpeg');
   execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', src, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '160k', dest]);
 }
 

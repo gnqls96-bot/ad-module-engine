@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { downloadWhisperModel, installWhisperCpp, transcribe } from '@remotion/install-whisper-cpp';
 import type { WhisperModel } from '@remotion/install-whisper-cpp';
 import { Aligner, TimedText } from './types.js';
+import { requireTool } from '../core/tools.js';
 
 /**
  * 무료 받아쓰기: whisper.cpp (OpenAI Whisper 모델을 내 컴퓨터에서 실행). 맥·윈도우·리눅스 공통.
@@ -142,6 +143,7 @@ export const whisper: Aligner = {
   },
   async transcribeTimed(audioFile) {
     // whisper.cpp 입력 형식: 16kHz 모노 WAV
+    requireTool('ffmpeg');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ame-wh-'));
     const wav = path.join(tmp, 'in.wav');
     execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', audioFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);

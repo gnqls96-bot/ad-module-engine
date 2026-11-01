@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { MediaInfo, SpecIssue } from './types.js';
+import { requireTool } from './tools.js';
 
 /** ffprobe로 영상 정보 읽기 */
 export function probe(file: string): MediaInfo {
+  requireTool('ffprobe');
   const out = execFileSync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', file], { encoding: 'utf8' });
   const j = JSON.parse(out);
   const v = j.streams.find((s: any) => s.codec_type === 'video');
