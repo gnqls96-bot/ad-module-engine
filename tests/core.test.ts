@@ -130,3 +130,11 @@ describe('자막 줄바꿈', () => {
     expect(lines.join(' ')).toBe('토너로 결을 정돈하고 세 방울만 눌러 바르세요.');
   });
 });
+
+describe('목표 길이 범위', () => {
+  it('범위 사이에 빈틈이 없다 (내레이션으로 18~22초가 돼도 어느 목표엔 들어감)', async () => {
+    const { LENGTH_RANGE } = await import('../src/core/combinator');
+    expect(LENGTH_RANGE[15][1]).toBe(LENGTH_RANGE[30][0]);
+    expect(LENGTH_RANGE[30][1]).toBe(LENGTH_RANGE[60][0]);
+  });
+});

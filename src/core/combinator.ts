@@ -27,7 +27,8 @@ export interface BatchInput {
   maxCombos?: number;
 }
 
-export const LENGTH_RANGE: Record<15 | 30 | 60, [number, number]> = { 15: [10, 18], 30: [22, 38], 60: [45, 70] };
+/** 목표 길이별 허용 범위. 범위 사이에 빈틈이 없어야 어떤 길이든 한 목표에는 들어간다 */
+export const LENGTH_RANGE: Record<15 | 30 | 60, [number, number]> = { 15: [8, 20], 30: [20, 40], 60: [40, 75] };
 
 const FIXED: Record<BatchMode, ModuleKind[]> = {
   'hook-test': ['story', 'offer'],
