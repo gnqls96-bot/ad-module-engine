@@ -43,7 +43,7 @@
 
 | | 맥 (터미널) | 윈도우 (PowerShell) |
 | --- | --- | --- |
-| 준비물 설치 | `brew install node ffmpeg git` | `winget install OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git` 후 PowerShell 새로 열기 |
+| 준비물 설치 | `brew install node ffmpeg git cmake` | `winget install OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git` 후 PowerShell 새로 열기 |
 | 설치 확인 | `node -v` · `ffmpeg -version` | 같음 |
 
 ```bash
@@ -74,7 +74,7 @@ npm run demo -- --no-render    # 렌더링 없이 흐름만
 | | 맥 | 윈도우 |
 | --- | --- | --- |
 | 내장 음성 (무료) | `macos-say` (유나 등) | `windows-tts` (Heami 등, 한국어 음성 팩 설치 필요) |
-| Whisper 설치 | 소스를 받아 빌드 (Xcode 명령줄 도구 필요: `xcode-select --install`) | 실행 파일을 받아 풀기 (빌드 도구 필요 없음) |
+| Whisper 설치 | 소스를 받아 빌드 (`xcode-select --install`, `brew install cmake` 필요) | 실행 파일을 받아 풀기 (빌드 도구 필요 없음) |
 | MeloTTS 실행 이름 | `python3` | `python` (다르면 `AME_PYTHON`으로 지정) |
 
 ---

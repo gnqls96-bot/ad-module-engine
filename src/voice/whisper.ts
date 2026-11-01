@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { downloadWhisperModel, installWhisperCpp, transcribe } from '@remotion/install-whisper-cpp';
 import type { WhisperModel } from '@remotion/install-whisper-cpp';
 import { Aligner, TimedText } from './types.js';
@@ -57,6 +57,33 @@ function modelOk(model: string) {
   }
 }
 
+/**
+ * 맥·리눅스는 소스를 빌드하므로 git, make, cmake, C++ 컴파일러가 필요하다.
+ * (whisper.cpp 1.7부터 make가 내부에서 cmake를 부른다 — 맥에 cmake가 없으면 "make 실패"로만 보여서 원인을 알기 어렵다)
+ */
+function checkBuildTools() {
+  const has = (bin: string, arg = '--version') => {
+    const r = spawnSync(bin, [arg], { stdio: 'ignore' });
+    return !r.error && r.status === 0;
+  };
+  const missing: string[] = [];
+  if (!has('git')) missing.push('git');
+  if (!has('make')) missing.push('make');
+  if (!has('c++')) missing.push('C++ 컴파일러');
+  if (!has('cmake')) missing.push('cmake');
+  if (!missing.length) return;
+  const hint =
+    process.platform === 'darwin'
+      ? [
+          missing.some((m) => m !== 'cmake') ? '1) `xcode-select --install` (개발 도구, 창이 뜨면 "설치")' : '',
+          missing.includes('cmake') ? `${missing.some((m) => m !== 'cmake') ? '2' : '1'}) \`brew install cmake\`` : '',
+        ]
+          .filter(Boolean)
+          .join('\n  ')
+      : '`sudo apt-get install -y build-essential cmake git` 등으로 설치';
+  throw new Error(`Whisper를 빌드하려면 ${missing.join(', ')}이(가) 필요해요. 설치 후 다시 실행하세요:\n  ${hint}`);
+}
+
 /** whisper-cli 실행 파일 위치 (1.7.4 이상은 build/bin 아래, 윈도우는 .exe) */
 export const whisperExe = () => path.join(cppDir(), 'build', 'bin', process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli');
 
@@ -68,6 +95,7 @@ export async function setupWhisper(opts: { model?: string; log?: (s: string) => 
 
   if (fs.existsSync(whisperExe())) log(`whisper.cpp 이미 설치됨 → ${cppDir()}`);
   else {
+    if (process.platform !== 'win32') checkBuildTools();
     // 이전에 실패해 반쯤 남은 폴더는 지우고 다시 설치
     if (fs.existsSync(cppDir())) fs.rmSync(cppDir(), { recursive: true, force: true });
     log(`whisper.cpp ${WHISPER_VERSION} 설치 중 → ${cppDir()}${process.platform === 'win32' ? ' (실행 파일 다운로드)' : ' (소스 빌드, 몇 분 걸림)'}`);
@@ -75,7 +103,10 @@ export async function setupWhisper(opts: { model?: string; log?: (s: string) => 
     // 윈도우 설치는 현재 폴더에 zip을 받으므로, 설치 폴더에서 실행해 작업 공간을 어지르지 않게 한다
     process.chdir(whisperDir());
     try {
-      await installWhisperCpp({ version: WHISPER_VERSION, to: cppDir(), printOutput: false });
+      // 빌드 과정을 화면에 보여줘야 실패했을 때 원인을 알 수 있다
+      await installWhisperCpp({ version: WHISPER_VERSION, to: cppDir(), printOutput: true });
+    } catch (e) {
+      throw new Error(`whisper.cpp 설치 실패: ${(e as Error).message}\n  위에 나온 빌드 메시지 중 "error"가 있는 줄을 확인하세요. 다시 시도하면 반쯤 남은 폴더는 자동으로 지우고 새로 설치합니다.`);
     } finally {
       process.chdir(cwd);
     }
