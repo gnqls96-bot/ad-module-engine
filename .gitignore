@@ -2,7 +2,29 @@ node_modules/
 .ame/
 workspace/
 demo-workspace/
-*.mp4
-!docs/**/*.mp4
 .DS_Store
 .env
+
+# 레퍼런스 파일·받아쓰기 결과는 절대 올리지 않는다 (타사 광고 원본)
+references/
+transcript.json
+*.transcript.json
+
+# 영상·이미지·음성 원본 (문서용 그림만 예외)
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.mkv
+*.webp
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.gif
+*.wav
+*.m4a
+!docs/**/*.mp4
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.gif

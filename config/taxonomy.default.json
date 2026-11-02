@@ -47,5 +47,15 @@
   "target": {
     "label": "타겟",
     "values": {}
+  },
+  "category": {
+    "label": "카테고리",
+    "values": {}
+  },
+  "efficiency": {
+    "label": "효율",
+    "values": {
+      "high": "고효율"
+    }
   }
 }

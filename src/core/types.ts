@@ -209,6 +209,15 @@ export interface Reference extends Owned {
   transcript?: string;
   tags: ModuleTags & { [k: string]: string | undefined };
   notes?: string;
+  /** 등록한 파일 정보. sha256 = 파일 내용 지문 (같은 파일 중복 등록 방지) */
+  kind?: 'video' | 'image';
+  sha256?: string;
+  originalName?: string;
+  media?: MediaInfo;
+  /** 단어별 시간이 든 받아쓰기 결과 파일 (작업 공간 기준 상대 경로) */
+  transcriptFile?: string;
+  /** 받아쓰기가 이상해 보이는 이유 (음악만, 말이 거의 없음 등). 비어 있으면 정상 */
+  transcriptIssues?: string[];
   createdAt: string;
 }
 

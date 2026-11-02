@@ -164,6 +164,55 @@ function findFile(dir: string, name: string): string | undefined {
   return undefined;
 }
 
+/** whisper.cpp 실행 (16kHz 모노 WAV로 바꿔서). 토큰 단위 시간이 들어 있다 */
+async function runWhisper(audioFile: string, splitOnWord = false) {
+  requireTool('ffmpeg');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ame-wh-'));
+  const wav = path.join(tmp, 'in.wav');
+  execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', audioFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);
+  try {
+    return await transcribe({
+      inputPath: wav,
+      whisperPath: cppDir(),
+      whisperCppVersion: WHISPER_VERSION,
+      model: whisperModel(),
+      modelFolder: modelDir(),
+      tokenLevelTimestamps: true,
+      language: (process.env.AME_WHISPER_LANG ?? 'ko') as any,
+      printOutput: false,
+      splitOnWord,
+    });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+const cleanToken = (t: string) => t.replace(/\[_[A-Z]+_?\d*\]/g, '');
+
+export interface TimedWord extends TimedText {
+  /** Whisper 확신도 (0~1, 단어 안 토큰 평균) */
+  p: number;
+}
+
+/**
+ * 영상 받아쓰기: 단어(띄어쓰기 단위)마다 시작·끝 시간과 확신도.
+ * 단어 단위로 끊어 받는다(splitOnWord). 토큰 단위로 받으면 한글 한 글자가 토큰 두 개로 쪼개져
+ * 글자가 깨진다("커��") — 단어 묶음의 글자는 온전하다.
+ */
+export async function transcribeWords(audioFile: string): Promise<{ model: string; language: string; text: string; words: TimedWord[] }> {
+  const out = await runWhisper(audioFile, true);
+  const words: TimedWord[] = [];
+  for (const item of out.transcription) {
+    const text = cleanToken(item.text).trim();
+    const toks = item.tokens.filter((t) => cleanToken(t.text).trim());
+    if (!text || !toks.length) continue;
+    const start = item.offsets.from / 1000;
+    const p = toks.reduce((sum, t) => sum + t.p, 0) / toks.length;
+    words.push({ text, start, end: Math.max(start, item.offsets.to / 1000), p: Math.round(p * 1000) / 1000 });
+  }
+  return { model: whisperModel(), language: process.env.AME_WHISPER_LANG ?? 'ko', text: words.map((w) => w.text).join(' '), words };
+}
+
 export const whisper: Aligner = {
   id: 'whisper',
   label: 'Whisper (무료, 내 컴퓨터)',
@@ -173,34 +222,16 @@ export const whisper: Aligner = {
     return { ok: true };
   },
   async transcribeTimed(audioFile) {
-    // whisper.cpp 입력 형식: 16kHz 모노 WAV
-    requireTool('ffmpeg');
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ame-wh-'));
-    const wav = path.join(tmp, 'in.wav');
-    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', audioFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);
-    try {
-      const out = await transcribe({
-        inputPath: wav,
-        whisperPath: cppDir(),
-        whisperCppVersion: WHISPER_VERSION,
-        model: whisperModel(),
-        modelFolder: modelDir(),
-        tokenLevelTimestamps: true,
-        language: (process.env.AME_WHISPER_LANG ?? 'ko') as any,
-        printOutput: false,
-      });
-      const words: TimedText[] = [];
-      for (const item of out.transcription)
-        for (const t of item.tokens) {
-          const text = t.text.replace(/\[_[A-Z]+_?\d*\]/g, '').trim();
-          if (!text) continue;
-          const start = t.offsets.from / 1000;
-          const end = t.offsets.to / 1000;
-          words.push({ text, start, end: Math.max(start, end) });
-        }
-      return words;
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+    const out = await runWhisper(audioFile);
+    const words: TimedText[] = [];
+    for (const item of out.transcription)
+      for (const t of item.tokens) {
+        const text = cleanToken(t.text).trim();
+        if (!text) continue;
+        const start = t.offsets.from / 1000;
+        const end = t.offsets.to / 1000;
+        words.push({ text, start, end: Math.max(start, end) });
+      }
+    return words;
   },
 };

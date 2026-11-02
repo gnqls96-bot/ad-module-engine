@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { Workspace, audit, findBrand, findProduct } from '../core/workspace.js';
-import { Account, Aspect, BatchMode, DB, effectiveDuration, KIND_LABEL, ModuleKind } from '../core/types.js';
+import { Account, Aspect, BatchMode, DB, effectiveDuration, KIND_LABEL, MediaInfo, ModuleKind } from '../core/types.js';
 import { AccessError, bootstrapAdmin, canSee, createAccount, findAccount, promoteToCommon, requireAdmin, setAccountStatus, visible } from '../core/access.js';
 import { createBrand, createProduct, mergeOffer, parseOffer } from '../core/catalog.js';
 import { findModule, registerModule, scanProductFolders, setReview } from '../core/modules.js';
-import { addReference, contextToMarkdown, generationContext, listReferences } from '../core/references.js';
+import { addReference, contextToMarkdown, fileSha256, findBySha, generationContext, listReferences } from '../core/references.js';
+import { scanReferenceFolder, transcriptIssues } from '../core/ingest.js';
+import { probe } from '../core/media.js';
 import { approveBatch, createBatch, findBatch, updateBatchOffer } from '../core/combinator.js';
 import { enqueueBatch, jobsVisible } from '../core/queue.js';
 import { batchCsv, memberSummary } from '../core/report.js';
@@ -380,6 +382,82 @@ tagOpts(
     ok(`레퍼런스 "${r.title}" 등록 (${r.scope === 'common' ? '공통: 모든 팀원에게 적용' : '개인: 본인만 보고 본인 생성에만 적용'}) · ID ${r.id}`);
   }),
 );
+ref
+  .command('ingest <folder>')
+  .description('폴더 일괄 등록: 하위 폴더 이름 = 카테고리 태그, 전부 고효율. 영상은 받아쓰기(단어 시간 포함)까지')
+  .action(async (folder) => {
+    const w = needWs();
+    const me = w.currentAccount(w.store.read(), program.opts().as);
+    const root = path.resolve(folder);
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error(`폴더가 없어요: ${folder}`);
+    const found = scanReferenceFolder(root);
+    if (!found.length) throw new Error(`등록할 영상·이미지가 없어요: ${folder}`);
+    const { whisper, transcribeWords } = await import('../voice/whisper.js');
+    if (found.some((f) => f.kind === 'video')) {
+      const a = whisper.available();
+      if (!a.ok) throw new Error(`영상 받아쓰기에 Whisper가 필요해요: ${a.reason}`);
+    }
+    const seen = new Set<string>();
+    const flagged: { title: string; category?: string; issues: string[] }[] = [];
+    let added = 0, skipped = 0, cloud = 0, failed = 0;
+    for (const [i, f] of found.entries()) {
+      const name = path.basename(f.file).normalize('NFC');
+      const label = `[${i + 1}/${found.length}] ${f.category ?? '(카테고리 없음)'}/${name}`;
+      if (f.cloudOnly) {
+        cloud++;
+        warn(`${label}: 클라우드에만 있고 이 컴퓨터에 없어요. 건너뜀 (Finder에서 폴더 우클릭 → "지금 다운로드" 후 다시 실행)`);
+        continue;
+      }
+      try {
+        const sha = fileSha256(f.file);
+        const dup = seen.has(sha) || findBySha(w.store.read(), me, sha);
+        if (dup) {
+          skipped++;
+          info(`· ${label}: 이미 등록된 파일 (내용이 같음). 건너뜀`);
+          continue;
+        }
+        let media: MediaInfo | undefined, transcriptData: unknown, issues: string[] | undefined, text: string | undefined;
+        if (f.kind === 'video') {
+          media = probe(f.file);
+          const t0 = Date.now();
+          const tr = media.hasAudio ? await transcribeWords(f.file) : { model: '', language: '', text: '', words: [] };
+          issues = transcriptIssues(tr.words, media);
+          text = tr.text;
+          transcriptData = { ...tr, durationSec: media.durationSec, createdAt: now() };
+          info(`  ${label}: 받아쓰기 ${tr.words.length}단어 (${((Date.now() - t0) / 1000).toFixed(0)}초 걸림)`);
+        }
+        const r = w.store.transact((db) => {
+          const r = addReference(w, db, me, {
+            title: name.replace(/\.[^.]+$/, ''),
+            source: '폴더 일괄 등록',
+            file: f.file,
+            kind: f.kind,
+            media,
+            transcript: text || undefined,
+            transcriptData,
+            transcriptIssues: issues,
+            // 전부 고효율. 게재 일수는 모르므로 비워 둔다 → 모든 레퍼런스가 같은 가중치
+            tags: { ...(f.category ? { category: f.category } : {}), efficiency: 'high' },
+          });
+          audit(db, me, 'reference.ingest', r.id, `${f.category ?? ''}/${name}`);
+          return r;
+        });
+        seen.add(sha);
+        added++;
+        ok(`${label}: 등록 (${f.kind === 'video' ? '영상' : '이미지, 글자 인식은 다음 기능에서'}, ${r.scope === 'common' ? '공통' : '개인'})`);
+        if (issues?.length) flagged.push({ title: `${f.category ?? ''}/${name}`, category: f.category, issues });
+      } catch (e: any) {
+        failed++;
+        warn(`${label}: ${e.message}`);
+      }
+    }
+    info(`\n완료: 새로 등록 ${added} · 이미 있어서 건너뜀 ${skipped} · 클라우드 전용 ${cloud} · 실패 ${failed}`);
+    if (flagged.length) {
+      info(`\n받아쓰기가 이상해 보이는 영상 ${flagged.length}개:`);
+      for (const x of flagged) info(`- ${x.title}\n    ${x.issues.join('\n    ')}`);
+    }
+    if (failed || cloud) process.exitCode = 1;
+  });
 ref
   .command('list')
   .option('--brand <code>')

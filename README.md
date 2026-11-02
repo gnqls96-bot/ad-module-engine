@@ -187,7 +187,19 @@ ame reference add --title "건조함 역설 후킹 (경쟁사)" --source 스니�
 ame reference list
 ame reference context --brand DEMO    # 이 계정에 적용되는 레퍼런스 + 많이 쓰인 패턴 (게재 일수 가중)
 ame reference promote <ID>            # 팀원 개인 → 공통 (관리자)
+ame reference ingest ~/Documents/ame-references
 ```
+
+`reference ingest <폴더>`는 폴더를 통째로 등록합니다.
+
+- `<폴더>/<하위 폴더>/<파일>` 구조에서 **하위 폴더 이름이 카테고리 태그**가 됩니다 (뷰티, 건기식 등. 코드에 업종을 박지 않음).
+- 전부 "고효율"로 표시하고, 게재 일수는 비워 둡니다 (모든 레퍼런스가 같은 가중치).
+- 영상은 Whisper로 받아쓰기 (단어마다 시작·끝 시간, 확신도) → 레퍼런스 파일 옆 `transcript.json`에 저장.
+- 이미지는 등록만 합니다 (화면 글자 읽기는 다음 기능).
+- 같은 내용의 파일은 이름이 달라도 건너뜁니다. 원본 파일은 건드리지 않고, 작업 공간에 **원래 이름 그대로** 복사합니다.
+- iCloud·OneDrive에서 클라우드에만 있는 파일은 건너뛰고 알려 줍니다 (Finder에서 "지금 다운로드" 후 다시 실행).
+- 끝에 받아쓰기가 이상해 보이는 영상(말소리 없음, 말이 거의 없음, 같은 말 반복, 너무 짧음 등)을 모아 보여 줍니다.
+- 레퍼런스 파일과 받아쓰기 결과는 `.gitignore`로 git에 올라가지 않습니다. 작업 공간은 엔진 저장소 밖에 두세요.
 
 `reference context`는 Claude 스킬이 후킹·대본을 쓸 때 읽는 형식입니다. 2단계 레퍼런스 분석기가 붙으면 태그와 대사를 영상에서 자동으로 채웁니다.
 
@@ -275,7 +287,7 @@ ame module voice all --brand DEMO --product SERUM --force   # 새 목소리로 �
   brands/<브랜드>/<제품>/
     modules/hook|bridge|story|offer/   모듈 영상 (H001_원래이름.mp4)
     renders/<배치>/                    결과 MP4 + 조합목록 CSV
-  references/common|<계정ID>/       레퍼런스 파일
+  references/common|<계정ID>/<지문>/ 레퍼런스 파일 (원래 이름) + transcript.json
 ```
 
 작업 공간을 구글 드라이브 동기화 폴더에 두면 영상 저장소가 드라이브가 됩니다. 엔진 코드는 그대로입니다.

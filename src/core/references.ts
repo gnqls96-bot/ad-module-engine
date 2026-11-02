@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Account, Brand, DB, Reference } from './types.js';
+import crypto from 'node:crypto';
+import { Account, Brand, DB, MediaInfo, Reference } from './types.js';
 import { newId, now } from './store.js';
 import { Workspace } from './workspace.js';
 import { appliedForGeneration, ownedBy, visible } from './access.js';
@@ -22,18 +23,54 @@ export interface ReferenceInput {
   tags?: Reference['tags'];
   notes?: string;
   brandId?: string;
+  kind?: Reference['kind'];
+  media?: MediaInfo;
+  /** 받아쓰기 결과 (단어 시간 포함). 레퍼런스 파일 옆에 transcript.json으로 저장 */
+  transcriptData?: unknown;
+  transcriptIssues?: string[];
+}
+
+/** 파일 내용 지문. 이름이 달라도 내용이 같으면 같은 값 */
+export function fileSha256(file: string): string {
+  const h = crypto.createHash('sha256');
+  const fd = fs.openSync(file, 'r');
+  const buf = Buffer.alloc(1 << 20);
+  try {
+    for (let n; (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0; ) h.update(buf.subarray(0, n));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return h.digest('hex');
+}
+
+/** 이 계정이 볼 수 있는 레퍼런스 중 내용이 같은 파일 */
+export function findBySha(db: DB, viewer: Account, sha: string): Reference | undefined {
+  return visible(viewer, db.references).find((r) => r.sha256 === sha);
 }
 
 export function addReference(ws: Workspace, db: DB, actor: Account, input: ReferenceInput): Reference {
   let file: string | undefined;
+  let sha: string | undefined;
+  let originalName: string | undefined;
+  let transcriptFile: string | undefined;
   if (input.file) {
     const abs = path.resolve(input.file);
     if (!fs.existsSync(abs)) throw new Error(`파일이 없어요: ${input.file}`);
-    const dir = path.join(ws.root, 'references', actor.role === 'admin' ? 'common' : actor.id);
+    sha = fileSha256(abs);
+    const dup = findBySha(db, actor, sha);
+    if (dup) throw new Error(`이미 등록된 파일이에요 (내용이 같음): "${dup.title}" · ID ${dup.id}`);
+    originalName = path.basename(abs);
+    // 원본 이름 그대로 보관. 이름이 같은 다른 파일과 섞이지 않게 내용 지문 폴더에 넣는다
+    const dir = path.join(ws.root, 'references', actor.role === 'admin' ? 'common' : actor.id, sha.slice(0, 16));
     fs.mkdirSync(dir, { recursive: true });
-    const dest = path.join(dir, `${Date.now()}_${path.basename(abs)}`);
+    const dest = path.join(dir, originalName);
     fs.copyFileSync(abs, dest);
     file = ws.rel(dest);
+    if (input.transcriptData !== undefined) {
+      const tf = path.join(dir, 'transcript.json');
+      fs.writeFileSync(tf, JSON.stringify(input.transcriptData, null, 2));
+      transcriptFile = ws.rel(tf);
+    }
   }
   const r: Reference = {
     id: newId('ref'),
@@ -46,6 +83,12 @@ export function addReference(ws: Workspace, db: DB, actor: Account, input: Refer
     transcript: input.transcript,
     tags: input.tags ?? {},
     notes: input.notes,
+    kind: input.kind,
+    sha256: sha,
+    originalName,
+    media: input.media,
+    transcriptFile,
+    transcriptIssues: input.transcriptIssues,
     createdAt: now(),
     ...ownedBy(actor),
   };
