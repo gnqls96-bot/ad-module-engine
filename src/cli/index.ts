@@ -489,6 +489,71 @@ ref
     if (failed || cloud) process.exitCode = 1;
   });
 ref
+  .command('export-analysis')
+  .description('구간 나누기·분류용 파일 만들기 (받아쓰기 + 화면 글자를 시간순으로, 포장·주의 문구는 걸러서)')
+  .option('--out <folder>', '저장 폴더 (기본: 작업 공간 analysis/)')
+  .option('--all', '이미 분석된 레퍼런스도 포함')
+  .option('--id <id...>', '이 레퍼런스만')
+  .action(async (o) => {
+    const { buildAnalysisInput, inputToMarkdown } = await import('../analysis/service.js');
+    read(({ w, db, me }) => {
+      const out = path.resolve(o.out ?? path.join(w.root, 'analysis'));
+      const refs = listReferences(db, me).filter((r) => (o.id ? o.id.includes(r.id) : o.all || !r.analysis));
+      if (!refs.length) return warn('내보낼 레퍼런스가 없어요 (이미 분석된 것까지 하려면 --all)');
+      fs.mkdirSync(out, { recursive: true });
+      const tax = loadTaxonomy(w);
+      const axes = ['hookType', 'storyType', 'offerType'].map((a) => `- ${a} (${tax[a].label}): ${Object.entries(tax[a].values).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      fs.writeFileSync(path.join(out, '_안내.md'), [
+        '# 분석 방법', '',
+        '레퍼런스마다 `<ID>.md`를 읽고 같은 폴더에 `<ID>.result.json`을 만든 뒤 `ame reference tag <폴더>`로 저장합니다.', '',
+        '## 결과 형식', '',
+        '```json',
+        JSON.stringify({ referenceId: 'ref_...', segments: [{ kind: 'hook', start: 0, end: 3.2 }, { kind: 'bridge', start: 3.2, end: 6 }, { kind: 'story', start: 6, end: 25 }, { kind: 'offer', start: 25, end: 33 }], hookText: '후킹 문구 (말 또는 화면)', tags: { hookType: 'pain', storyType: 'problem-first', offerType: 'discount' }, risks: [{ phrase: '문제 표현', reason: '이유', at: 12.3 }], newTypes: [{ axis: 'hookType', value: 'new-key', label: '한글 이름', reason: '기존 유형과 다른 점' }], notes: '' }, null, 2),
+        '```', '',
+        '- segments: 후킹·브릿지·스토리·오퍼 구간 (초). 없는 구간은 빼도 됨 (브릿지 없는 영상 많음). 이미지는 빈 배열',
+        '- tags: 아래 분류 체계 값. 맞는 게 없으면 새 영문 키를 쓰고 newTypes에 후보로 적기',
+        '- risks: 심의 위험 표현 (효능 단정, 질병 치료 암시, 최상급·보장, 근거 없는 수치 등)', '',
+        '## 분류 체계', '', ...axes, '',
+      ].join('\n'));
+      for (const r of refs) fs.writeFileSync(path.join(out, `${r.id}.md`), inputToMarkdown(buildAnalysisInput(w, r)));
+      ok(`분석용 파일 ${refs.length}개 → ${out}`);
+    });
+  });
+ref
+  .command('tag <paths...>')
+  .description('분석 결과(<ID>.result.json 파일 또는 그 파일들이 든 폴더) 저장 + 보고서 갱신 (작업 공간 reports/)')
+  .option('--provider <id>', '분석 제공자', 'claude-code')
+  .action(async (paths: string[], o) => {
+    const { validateResult, applyResult, analysisReport } = await import('../analysis/service.js');
+    const { getAnalysisProvider } = await import('../analysis/providers.js');
+    const provider = getAnalysisProvider(o.provider).id;
+    const files = paths.flatMap((p) => (fs.statSync(p).isDirectory() ? fs.readdirSync(p).filter((f) => f.endsWith('.result.json')).map((f) => path.join(p, f)) : [p]));
+    let saved = 0, bad = 0;
+    act(({ w, db, me }) => {
+      const tax = loadTaxonomy(w);
+      for (const f of files) {
+        try {
+          const res = JSON.parse(fs.readFileSync(f, 'utf8'));
+          const r = db.references.find((x) => x.id === res.referenceId);
+          if (!r || !canSee(me, r)) throw new Error(`레퍼런스 ${res.referenceId}를 찾을 수 없어요`);
+          const errs = validateResult(res, r, tax);
+          if (errs.length) throw new Error(errs.join(' / '));
+          applyResult(r, res, provider);
+          audit(db, me, 'reference.tag', r.id, provider);
+          saved++;
+        } catch (e: any) {
+          bad++;
+          warn(`${path.basename(f)}: ${e.message}`);
+        }
+      }
+      const rep = path.join(w.root, 'reports', 'reference-analysis.md');
+      fs.mkdirSync(path.dirname(rep), { recursive: true });
+      fs.writeFileSync(rep, analysisReport(db, tax));
+      ok(`저장 ${saved}개 · 실패 ${bad}개 · 보고서 ${rep}`);
+    });
+    if (bad) process.exitCode = 1;
+  });
+ref
   .command('list')
   .option('--brand <code>')
   .action((o) =>

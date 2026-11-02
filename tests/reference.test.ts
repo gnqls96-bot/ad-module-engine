@@ -80,3 +80,54 @@ describe('레퍼런스 일괄 등록', () => {
     expect(similarity('자막하나', '자막둘')).toBeLessThan(0.8);
   });
 });
+
+describe('레퍼런스 구간·분류 분석', async () => {
+  const { classifyScreenText, speechPhrases, validateResult } = await import('../src/analysis/service');
+  const { loadTaxonomy } = await import('../src/core/config');
+  const words = [
+    { text: '오늘', start: 0, end: 0.4 },
+    { text: '소개할', start: 0.4, end: 0.9 },
+    { text: '제품', start: 0.9, end: 1.3 },
+    { text: '가격은', start: 3, end: 3.5 },
+  ];
+  const seg = (text: string, start: number, end: number, y: number, size: number) => ({ text, start, end, y, size });
+
+  it('말은 쉬는 곳에서 끊는다', () => {
+    expect(speechPhrases(words).map((p) => p.text)).toEqual(['오늘 소개할 제품', '가격은']);
+  });
+
+  it('화면 글자: 말 자막·주의 문구·포장 글자를 거르고 헤드라인은 남긴다', () => {
+    const crowd = Array.from({ length: 8 }, (_, i) => seg(`성분표 줄 ${i}번`, 5, 6, 0.3 + i * 0.02, 0.03));
+    const { kept, filtered } = classifyScreenText(
+      [
+        seg('오늘 소개할 제품', 0, 1.5, 0.7, 0.05),
+        seg('개인차가 있을 수 있습니다', 0, 2, 0.95, 0.012),
+        seg('개인차가 있을 수', 2.5, 6, 0.95, 0.012),
+        seg('개인차가 있을 수 있습니다', 6.5, 10, 0.95, 0.012),
+        seg('지금만 50% 할인', 0, 10, 0.15, 0.06),
+        seg('딱 하루', 7, 8, 0.5, 0.05),
+        ...crowd,
+      ],
+      words,
+      10,
+    );
+    const reason = (t: string) => filtered.find((f) => f.text === t)?.reason;
+    expect(reason('오늘 소개할 제품')).toBe('caption');
+    expect(reason('개인차가 있을 수')).toBe('notice');
+    expect(reason('성분표 줄 0번')).toBe('packaging');
+    expect(kept.map((k) => [k.text, k.type])).toEqual([
+      ['지금만 50% 할인', 'headline'],
+      ['딱 하루', 'screen'],
+    ]);
+  });
+
+  it('결과 검사: 분류 체계에 없는 값은 새 유형 후보로 적어야 통과', () => {
+    const tax = loadTaxonomy(Workspace.resolve(tmp()));
+    const r: any = { kind: 'video', media: { durationSec: 20 } };
+    const base = { referenceId: 'x', hookText: 'h', risks: [], segments: [{ kind: 'hook', start: 0, end: 3 }] } as any;
+    expect(validateResult({ ...base, tags: { hookType: 'pain' }, newTypes: [] }, r, tax)).toEqual([]);
+    expect(validateResult({ ...base, tags: { hookType: 'brand-new' }, newTypes: [] }, r, tax)[0]).toMatch(/newTypes/);
+    expect(validateResult({ ...base, tags: { hookType: 'brand-new' }, newTypes: [{ axis: 'hookType', value: 'brand-new', label: '새것', reason: '-' }] }, r, tax)).toEqual([]);
+    expect(validateResult({ ...base, segments: [{ kind: 'offer', start: 0, end: 30 }], tags: {}, newTypes: [] }, r, tax).length).toBe(2);
+  });
+});

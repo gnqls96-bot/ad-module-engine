@@ -10,6 +10,11 @@ references/
 transcript.json
 *.transcript.json
 ocr.json
+# 분석용 파일·분석 결과·보고서 (레퍼런스 대사·문구가 들어 있음)
+analysis/
+!src/analysis/
+reports/
+*.result.json
 
 # 영상·이미지·음성 원본 (문서용 그림만 예외)
 *.mp4

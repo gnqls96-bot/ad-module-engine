@@ -221,7 +221,20 @@ export interface Reference extends Owned {
   /** 화면 글자 (이미지: 한 장 전체, 영상: 문구 구간들). 구간·위치·크기는 ocrFile에 */
   screenText?: string;
   ocrFile?: string;
+  /** 구간 나누기 + 분류 결과 (분류 태그 자체는 tags에 들어감) */
+  analysis?: ReferenceAnalysisResult;
   createdAt: string;
+}
+
+export interface ReferenceAnalysisResult {
+  provider: string;
+  segments: { kind: ModuleKind; start: number; end: number }[];
+  hookText: string;
+  risks: { phrase: string; reason: string; at?: number }[];
+  /** 분류 체계에 없는 유형 (보고서에서 모아 봄) */
+  newTypes: { axis: string; value: string; label: string; reason: string }[];
+  notes?: string;
+  analyzedAt: string;
 }
 
 export interface CheckResult {

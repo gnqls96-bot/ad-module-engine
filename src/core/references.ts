@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { Account, Brand, DB, MediaInfo, Reference } from './types.js';
+import { Account, Brand, DB, KIND_LABEL, MediaInfo, Reference } from './types.js';
 import { newId, now } from './store.js';
 import { Workspace } from './workspace.js';
 import { appliedForGeneration, ownedBy, visible } from './access.js';
@@ -169,6 +169,11 @@ export function contextToMarkdown(ctx: ReturnType<typeof generationContext>, db:
     lines.push(`- 범위: ${r.scope === 'common' ? '공통' : `개인(${owner(r.ownerId)})`} · 출처: ${r.source}${r.url ? ` (${r.url})` : ''} · 게재 ${r.runDays ?? '?'}일`);
     if (tags) lines.push(`- 태그: ${tags}`);
     if (r.transcript) lines.push(`- 대사: ${r.transcript}`);
+    if (r.analysis) {
+      lines.push(`- 후킹 문구: ${r.analysis.hookText}`);
+      if (r.analysis.segments.length) lines.push(`- 구간: ${r.analysis.segments.map((s) => `${KIND_LABEL[s.kind]} ${s.start}–${s.end}초`).join(' → ')}`);
+      if (r.analysis.risks.length) lines.push(`- 심의 위험 (따라 하지 말 것): ${r.analysis.risks.map((x) => x.phrase).join(' / ')}`);
+    }
     if (r.screenText) lines.push(`- 화면 글자: ${r.screenText.replace(/\n/g, ' / ')}`);
     if (r.notes) lines.push(`- 메모: ${r.notes}`);
     lines.push('');

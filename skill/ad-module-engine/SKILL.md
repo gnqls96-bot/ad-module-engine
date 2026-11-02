@@ -29,6 +29,7 @@ description: 광고 영상 모듈(후킹·브릿지·스토리·오퍼)을 조�
 | "팀원별 현황" (관리자) | `ame team` |
 | "팀장님 관리자 계정 만들어줘" (관리자) | `ame account create --name 팀장님 --role admin` |
 | "이 폴더 레퍼런스 전부 넣어줘" | `ame reference ingest <폴더>` (하위 폴더 = 카테고리, 받아쓰기 + 화면 글자, 영상당 30초 안팎이라 백그라운드로) → 끝의 "받아쓰기가 이상해 보이는 영상" 목록 전달. 다시 분석은 `--redo` |
+| "레퍼런스 분석해줘", "구간 나눠서 태그 달아줘" | `ame reference export-analysis` → `analysis/_안내.md`와 `<ID>.md`를 읽고 같은 폴더에 `<ID>.result.json` 작성 → `ame reference tag <analysis 폴더>` → 오류 난 파일 고쳐 다시 tag → `reports/reference-analysis.md` 요약 전달. 레퍼런스 이름·문구·분석 결과는 저장소(docs, 커밋)에 쓰지 않는다 |
 | "이 레퍼런스 저장해줘" | `ame reference add --title ... --source 스니핏 --run-days N --hook-type ...` |
 | "내레이션 넣어줘", "TTS로 읽혀줘" | `ame module voice <코드 또는 all> --brand B --product P` → 경고(음성이 영상보다 김 등) 전달 |
 | "촬영본 자막 맞춰줘" | `ame module align <코드 또는 all> --brand B --product P` |

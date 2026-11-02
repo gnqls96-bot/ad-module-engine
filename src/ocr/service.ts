@@ -7,12 +7,17 @@ import { OcrLine, OcrProvider, ScreenTextSegment } from './types.js';
 
 /** 글자 인식 결과에서 버리는 것: 확신도 낮음, 글자 1개 이하 (화면 잡음) */
 const MIN_CONF = 0.3;
-const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+export const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 
 /** 두 문구가 얼마나 같은지 (0~1). 프레임마다 글자 인식이 한두 글자씩 흔들리는 것을 같은 문구로 본다 */
 export function similarity(a: string, b: string): number {
   if (!a.length || !b.length) return 0;
   if (a === b) return 1;
+  return (2 * lcsLength(a, b)) / (a.length + b.length);
+}
+
+/** 두 문자열에서 순서대로 겹치는 글자 수 (최장 공통 부분 수열) */
+export function lcsLength(a: string, b: string): number {
   const dp = new Uint16Array(b.length + 1);
   for (let i = 1; i <= a.length; i++) {
     let prev = 0;
@@ -22,7 +27,7 @@ export function similarity(a: string, b: string): number {
       prev = tmp;
     }
   }
-  return (2 * dp[b.length]) / (a.length + b.length);
+  return dp[b.length];
 }
 
 /**
