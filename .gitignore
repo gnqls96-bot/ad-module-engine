@@ -9,6 +9,7 @@ demo-workspace/
 references/
 transcript.json
 *.transcript.json
+ocr.json
 
 # 영상·이미지·음성 원본 (문서용 그림만 예외)
 *.mp4

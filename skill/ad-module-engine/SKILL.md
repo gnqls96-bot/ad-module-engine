@@ -28,7 +28,7 @@ description: 광고 영상 모듈(후킹·브릿지·스토리·오퍼)을 조�
 | "조합 목록 엑셀로" | `ame batch export <배치>` |
 | "팀원별 현황" (관리자) | `ame team` |
 | "팀장님 관리자 계정 만들어줘" (관리자) | `ame account create --name 팀장님 --role admin` |
-| "이 폴더 레퍼런스 전부 넣어줘" | `ame reference ingest <폴더>` (하위 폴더 = 카테고리, 오래 걸리면 백그라운드) → 끝의 "받아쓰기가 이상해 보이는 영상" 목록 전달 |
+| "이 폴더 레퍼런스 전부 넣어줘" | `ame reference ingest <폴더>` (하위 폴더 = 카테고리, 받아쓰기 + 화면 글자, 영상당 30초 안팎이라 백그라운드로) → 끝의 "받아쓰기가 이상해 보이는 영상" 목록 전달. 다시 분석은 `--redo` |
 | "이 레퍼런스 저장해줘" | `ame reference add --title ... --source 스니핏 --run-days N --hook-type ...` |
 | "내레이션 넣어줘", "TTS로 읽혀줘" | `ame module voice <코드 또는 all> --brand B --product P` → 경고(음성이 영상보다 김 등) 전달 |
 | "촬영본 자막 맞춰줘" | `ame module align <코드 또는 all> --brand B --product P` |

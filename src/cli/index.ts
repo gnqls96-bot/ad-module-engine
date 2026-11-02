@@ -6,7 +6,7 @@ import { Account, Aspect, BatchMode, DB, effectiveDuration, KIND_LABEL, MediaInf
 import { AccessError, bootstrapAdmin, canSee, createAccount, findAccount, promoteToCommon, requireAdmin, setAccountStatus, visible } from '../core/access.js';
 import { createBrand, createProduct, mergeOffer, parseOffer } from '../core/catalog.js';
 import { findModule, registerModule, scanProductFolders, setReview } from '../core/modules.js';
-import { addReference, contextToMarkdown, fileSha256, findBySha, generationContext, listReferences } from '../core/references.js';
+import { addReference, applyAnalysis, contextToMarkdown, fileSha256, findBySha, generationContext, listReferences, ReferenceAnalysis } from '../core/references.js';
 import { scanReferenceFolder, transcriptIssues } from '../core/ingest.js';
 import { probe } from '../core/media.js';
 import { approveBatch, createBatch, findBatch, updateBatchOffer } from '../core/combinator.js';
@@ -384,8 +384,9 @@ tagOpts(
 );
 ref
   .command('ingest <folder>')
-  .description('폴더 일괄 등록: 하위 폴더 이름 = 카테고리 태그, 전부 고효율. 영상은 받아쓰기(단어 시간 포함)까지')
-  .action(async (folder) => {
+  .description('폴더 일괄 등록: 하위 폴더 이름 = 카테고리 태그, 전부 고효율. 영상은 받아쓰기, 영상·이미지 모두 화면 글자 읽기')
+  .option('--redo', '이미 등록된 파일도 받아쓰기·화면 글자를 다시 분석')
+  .action(async (folder, o) => {
     const w = needWs();
     const me = w.currentAccount(w.store.read(), program.opts().as);
     const root = path.resolve(folder);
@@ -397,9 +398,17 @@ ref
       const a = whisper.available();
       if (!a.ok) throw new Error(`영상 받아쓰기에 Whisper가 필요해요: ${a.reason}`);
     }
+    const { resolveOcr } = await import('../ocr/providers.js');
+    const { readImageText, readVideoText } = await import('../ocr/service.js');
+    let ocr: Awaited<ReturnType<typeof resolveOcr>> | undefined;
+    try {
+      ocr = resolveOcr();
+    } catch (e: any) {
+      warn(`화면 글자 읽기는 건너뜀: ${e.message}`);
+    }
     const seen = new Set<string>();
-    const flagged: { title: string; category?: string; issues: string[] }[] = [];
-    let added = 0, skipped = 0, cloud = 0, failed = 0;
+    const flagged: { title: string; issues: string[] }[] = [];
+    let added = 0, redone = 0, skipped = 0, cloud = 0, failed = 0;
     for (const [i, f] of found.entries()) {
       const name = path.basename(f.file).normalize('NFC');
       const label = `[${i + 1}/${found.length}] ${f.category ?? '(카테고리 없음)'}/${name}`;
@@ -410,32 +419,52 @@ ref
       }
       try {
         const sha = fileSha256(f.file);
-        const dup = seen.has(sha) || findBySha(w.store.read(), me, sha);
-        if (dup) {
+        const existing = findBySha(w.store.read(), me, sha);
+        if (seen.has(sha) || (existing && !o.redo)) {
           skipped++;
           info(`· ${label}: 이미 등록된 파일 (내용이 같음). 건너뜀`);
           continue;
         }
-        let media: MediaInfo | undefined, transcriptData: unknown, issues: string[] | undefined, text: string | undefined;
-        if (f.kind === 'video') {
-          media = probe(f.file);
-          const t0 = Date.now();
+        const t0 = Date.now();
+        const analysis: ReferenceAnalysis = {};
+        const media: MediaInfo | undefined = f.kind === 'video' ? probe(f.file) : undefined;
+        const notes: string[] = [];
+        if (media) {
+          // 소리 트랙이 없으면 Whisper를 돌리지 않는다 (말소리 없음으로 표시)
           const tr = media.hasAudio ? await transcribeWords(f.file) : { model: '', language: '', text: '', words: [] };
-          issues = transcriptIssues(tr.words, media);
-          text = tr.text;
-          transcriptData = { ...tr, durationSec: media.durationSec, createdAt: now() };
-          info(`  ${label}: 받아쓰기 ${tr.words.length}단어 (${((Date.now() - t0) / 1000).toFixed(0)}초 걸림)`);
+          analysis.transcriptIssues = transcriptIssues(tr.words, media);
+          analysis.transcript = tr.text;
+          analysis.transcriptData = { ...tr, vad: true, durationSec: media.durationSec, createdAt: now() };
+          notes.push(`받아쓰기 ${tr.words.length}단어`);
+        }
+        if (ocr) {
+          if (media) {
+            const v = await readVideoText(ocr, f.file, media.durationSec);
+            analysis.ocrData = { ...v, createdAt: now() };
+            analysis.screenText = [...new Set(v.segments.map((x) => x.text))].join('\n');
+            notes.push(`화면 문구 ${v.segments.length}개 (${v.frames}장 읽음)`);
+          } else {
+            const im = await readImageText(ocr, f.file);
+            analysis.ocrData = { ...im, createdAt: now() };
+            analysis.screenText = im.text;
+            notes.push(`화면 글자 ${im.lines.length}줄`);
+          }
         }
         const r = w.store.transact((db) => {
+          const cur = existing && db.references.find((x) => x.id === existing.id);
+          if (cur) {
+            applyAnalysis(w, cur, analysis);
+            if (media) cur.media = media;
+            audit(db, me, 'reference.reanalyze', cur.id, `${f.category ?? ''}/${name}`);
+            return cur;
+          }
           const r = addReference(w, db, me, {
             title: name.replace(/\.[^.]+$/, ''),
             source: '폴더 일괄 등록',
             file: f.file,
             kind: f.kind,
             media,
-            transcript: text || undefined,
-            transcriptData,
-            transcriptIssues: issues,
+            ...analysis,
             // 전부 고효율. 게재 일수는 모르므로 비워 둔다 → 모든 레퍼런스가 같은 가중치
             tags: { ...(f.category ? { category: f.category } : {}), efficiency: 'high' },
           });
@@ -443,15 +472,16 @@ ref
           return r;
         });
         seen.add(sha);
-        added++;
-        ok(`${label}: 등록 (${f.kind === 'video' ? '영상' : '이미지, 글자 인식은 다음 기능에서'}, ${r.scope === 'common' ? '공통' : '개인'})`);
-        if (issues?.length) flagged.push({ title: `${f.category ?? ''}/${name}`, category: f.category, issues });
+        if (existing) redone++;
+        else added++;
+        ok(`${label}: ${existing ? '다시 분석' : '등록'} (${f.kind === 'video' ? '영상' : '이미지'}, ${r.scope === 'common' ? '공통' : '개인'}) · ${notes.join(' · ') || '분석 없음'} · ${((Date.now() - t0) / 1000).toFixed(0)}초`);
+        if (analysis.transcriptIssues?.length) flagged.push({ title: `${f.category ?? ''}/${name}`, issues: analysis.transcriptIssues });
       } catch (e: any) {
         failed++;
         warn(`${label}: ${e.message}`);
       }
     }
-    info(`\n완료: 새로 등록 ${added} · 이미 있어서 건너뜀 ${skipped} · 클라우드 전용 ${cloud} · 실패 ${failed}`);
+    info(`\n완료: 새로 등록 ${added} · 다시 분석 ${redone} · 건너뜀 ${skipped} · 클라우드 전용 ${cloud} · 실패 ${failed}`);
     if (flagged.length) {
       info(`\n받아쓰기가 이상해 보이는 영상 ${flagged.length}개:`);
       for (const x of flagged) info(`- ${x.title}\n    ${x.issues.join('\n    ')}`);

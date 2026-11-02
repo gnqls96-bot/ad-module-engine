@@ -218,6 +218,9 @@ export interface Reference extends Owned {
   transcriptFile?: string;
   /** 받아쓰기가 이상해 보이는 이유 (음악만, 말이 거의 없음 등). 비어 있으면 정상 */
   transcriptIssues?: string[];
+  /** 화면 글자 (이미지: 한 장 전체, 영상: 문구 구간들). 구간·위치·크기는 ocrFile에 */
+  screenText?: string;
+  ocrFile?: string;
   createdAt: string;
 }
 

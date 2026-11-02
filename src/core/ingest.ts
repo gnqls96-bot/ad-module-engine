@@ -64,7 +64,7 @@ export function transcriptIssues(
   if (!media.hasAudio) issues.push('음성 트랙 없음');
   if (d < 5) issues.push(`너무 짧음 (${d.toFixed(1)}초)`);
   if (!words.length) {
-    if (media.hasAudio) issues.push('말소리 없음 (받아쓰기 결과 비어 있음): 음악만 있거나 자막으로만 전달하는 영상일 수 있음');
+    if (media.hasAudio) issues.push('말소리 없음 (사람 목소리 구간이 감지되지 않음): 음악만 있거나 자막으로만 전달하는 영상');
     return issues;
   }
   const text = words.map((w) => w.text).join(' ');

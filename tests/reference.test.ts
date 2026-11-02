@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { bootstrapAdmin, createAccount } from '../src/core/access';
 import { addReference, findBySha } from '../src/core/references';
 import { scanReferenceFolder, transcriptIssues } from '../src/core/ingest';
+import { mergeFrames, similarity } from '../src/ocr/service';
 import { Workspace } from '../src/core/workspace';
 import { EMPTY_DB } from '../src/core/types';
 
@@ -54,5 +55,28 @@ describe('레퍼런스 일괄 등록', () => {
     expect(transcriptIssues(loop, media).join()).toMatch(/같은 말 반복/);
     expect(transcriptIssues([{ text: '다음', start: 1, end: 1.5, p: 0.6 }, { text: '영상에서', start: 1.5, end: 2, p: 0.6 }, { text: '만나요!', start: 2, end: 2.5, p: 0.6 }], media).join()).toMatch(/지어내는 문구/);
     expect(transcriptIssues(speech, { durationSec: 3, hasAudio: true }).join()).toMatch(/너무 짧음/);
+  });
+
+  it('화면 글자: 같은 문구가 이어지면 한 구간, 한 프레임 흔들림은 무시', () => {
+    const L = (text: string, y = 0.1, h = 0.05) => ({ text, conf: 0.9, x: 0.1, y, w: 0.5, h });
+    const frames = [
+      [L('이거 모르면 손해'), L('자막 하나', 0.8, 0.02)],
+      [L('이거 모르면 손해!'), L('자막 하나', 0.8, 0.02)],
+      [L('이거 모르면 존해'), L('자막 둘', 0.8, 0.02)],
+      [L('이거 모르면 손해')],
+      [L('x')],
+      [],
+      [],
+      [L('이거 모르면 손해')],
+    ];
+    const segs = mergeFrames(frames, 0.5, 4);
+    // 한 프레임에만 보인 '자막 둘'과 마지막 '이거 모르면 손해'는 잡음으로 버림
+    expect(segs.map((s) => [s.text, s.start, s.end])).toEqual([
+      ['이거 모르면 손해', 0, 2],
+      ['자막 하나', 0, 1],
+    ]);
+    expect(segs[0].size).toBe(0.05);
+    expect(similarity('이거모르면손해', '이거모르면존해')).toBeGreaterThan(0.8);
+    expect(similarity('자막하나', '자막둘')).toBeLessThan(0.8);
   });
 });

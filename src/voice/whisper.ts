@@ -31,6 +31,21 @@ const modelDir = () => path.join(whisperDir(), 'models');
 const configFile = () => path.join(whisperDir(), 'config.json');
 const modelPath = (model: string) => path.join(modelDir(), `ggml-${model}.bin`);
 
+/**
+ * 음성 구간 감지(VAD) 모델 (Silero, 약 0.9MB). 사람 목소리가 있는 구간만 Whisper에 넘긴다.
+ * 음악만 있는 구간에서 Whisper가 "감사합니다", "다음 영상에서 만나요" 같은 말을 지어내는 것을 막는다.
+ */
+const VAD_MODEL = 'silero-v5.1.2';
+const VAD_URL = `https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-${VAD_MODEL}.bin`;
+export const vadModelPath = () => path.join(modelDir(), `ggml-${VAD_MODEL}.bin`);
+const vadOk = () => {
+  try {
+    return fs.statSync(vadModelPath()).size > 100 * 1024 && ['lmgg', 'ggml'].includes(fs.readFileSync(vadModelPath()).subarray(0, 4).toString('latin1'));
+  } catch {
+    return false;
+  }
+};
+
 /** 우선순위: AME_WHISPER_MODEL > setup 때 고른 모델 > 기본 */
 export function whisperModel(): WhisperModel {
   if (process.env.AME_WHISPER_MODEL) return process.env.AME_WHISPER_MODEL as WhisperModel;
@@ -130,6 +145,22 @@ export async function setupWhisper(opts: { model?: string; log?: (s: string) => 
       throw new Error('모델 파일이 올바르지 않아요. 다시 실행해 주세요.');
     }
   }
+  if (vadOk()) log(`음성 구간 감지 모델 ${VAD_MODEL} 이미 있음`);
+  else {
+    log(`음성 구간 감지 모델 ${VAD_MODEL} 다운로드 중`);
+    try {
+      const res = await fetch(VAD_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      fs.writeFileSync(vadModelPath(), Buffer.from(await res.arrayBuffer()));
+    } catch (e) {
+      fs.rmSync(vadModelPath(), { force: true });
+      throw new Error(`음성 구간 감지 모델 다운로드 실패 (인터넷 연결 확인 후 다시 실행): ${(e as Error).message}`);
+    }
+    if (!vadOk()) {
+      fs.rmSync(vadModelPath(), { force: true });
+      throw new Error('음성 구간 감지 모델 파일이 올바르지 않아요. 다시 실행해 주세요.');
+    }
+  }
   fs.writeFileSync(configFile(), JSON.stringify({ model, version: WHISPER_VERSION, installedAt: new Date().toISOString() }, null, 2));
   log(`완료 (모델: ${model})`);
 }
@@ -165,7 +196,7 @@ function findFile(dir: string, name: string): string | undefined {
 }
 
 /** whisper.cpp 실행 (16kHz 모노 WAV로 바꿔서). 토큰 단위 시간이 들어 있다 */
-async function runWhisper(audioFile: string, splitOnWord = false) {
+async function runWhisper(audioFile: string) {
   requireTool('ffmpeg');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ame-wh-'));
   const wav = path.join(tmp, 'in.wav');
@@ -180,7 +211,10 @@ async function runWhisper(audioFile: string, splitOnWord = false) {
       tokenLevelTimestamps: true,
       language: (process.env.AME_WHISPER_LANG ?? 'ko') as any,
       printOutput: false,
-      splitOnWord,
+      splitOnWord: true,
+      // 사람 목소리 구간만 받아쓰기. 시간은 원래 영상 기준으로 돌려준다.
+      // 기준값 0.35: 기본 0.5는 배경음악 위 빠른 말을 한 문장 통째로 놓쳤다 (레퍼런스 36개로 비교, DEVLOG 2026-11-02)
+      additionalArgs: ['--vad', '--vad-model', vadModelPath(), '--vad-threshold', '0.35'],
     });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -200,7 +234,7 @@ export interface TimedWord extends TimedText {
  * 글자가 깨진다("커��") — 단어 묶음의 글자는 온전하다.
  */
 export async function transcribeWords(audioFile: string): Promise<{ model: string; language: string; text: string; words: TimedWord[] }> {
-  const out = await runWhisper(audioFile, true);
+  const out = await runWhisper(audioFile);
   const words: TimedWord[] = [];
   for (const item of out.transcription) {
     const text = cleanToken(item.text).trim();
@@ -219,19 +253,11 @@ export const whisper: Aligner = {
   available() {
     if (!fs.existsSync(whisperExe())) return { ok: false, reason: 'whisper.cpp 미설치 (`ame voice setup-whisper`)' };
     if (!modelOk(whisperModel())) return { ok: false, reason: `모델 ${whisperModel()} 없음 또는 손상 (\`ame voice setup-whisper\`)` };
+    if (!vadOk()) return { ok: false, reason: '음성 구간 감지 모델 없음 (`ame voice setup-whisper` 다시 실행)' };
     return { ok: true };
   },
   async transcribeTimed(audioFile) {
-    const out = await runWhisper(audioFile);
-    const words: TimedText[] = [];
-    for (const item of out.transcription)
-      for (const t of item.tokens) {
-        const text = cleanToken(t.text).trim();
-        if (!text) continue;
-        const start = t.offsets.from / 1000;
-        const end = t.offsets.to / 1000;
-        words.push({ text, start, end: Math.max(start, end) });
-      }
-    return words;
+    // 단어 단위로 받는다 (토큰 단위는 한글이 깨짐). align.ts가 단어 시간을 글자로 펼친다
+    return (await transcribeWords(audioFile)).words.map(({ text, start, end }) => ({ text, start, end }));
   },
 };

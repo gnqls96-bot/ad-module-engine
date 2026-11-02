@@ -28,6 +28,31 @@ export interface ReferenceInput {
   /** 받아쓰기 결과 (단어 시간 포함). 레퍼런스 파일 옆에 transcript.json으로 저장 */
   transcriptData?: unknown;
   transcriptIssues?: string[];
+  /** 화면 글자 읽기 결과. 레퍼런스 파일 옆에 ocr.json으로 저장 */
+  ocrData?: unknown;
+  screenText?: string;
+}
+
+export type ReferenceAnalysis = Pick<ReferenceInput, 'transcript' | 'transcriptData' | 'transcriptIssues' | 'ocrData' | 'screenText'>;
+
+/** 분석 결과(받아쓰기·화면 글자)를 레퍼런스 파일 옆에 저장하고 레코드에 반영. 다시 분석할 때도 쓴다 */
+export function applyAnalysis(ws: Workspace, r: Reference, a: ReferenceAnalysis) {
+  if (!r.file) return;
+  const dir = path.dirname(ws.abs(r.file));
+  const save = (name: string, data: unknown) => {
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, JSON.stringify(data, null, 2));
+    return ws.rel(f);
+  };
+  if (a.transcriptData !== undefined) {
+    r.transcriptFile = save('transcript.json', a.transcriptData);
+    r.transcript = a.transcript || undefined;
+    r.transcriptIssues = a.transcriptIssues;
+  }
+  if (a.ocrData !== undefined) {
+    r.ocrFile = save('ocr.json', a.ocrData);
+    r.screenText = a.screenText || undefined;
+  }
 }
 
 /** 파일 내용 지문. 이름이 달라도 내용이 같으면 같은 값 */
@@ -52,7 +77,6 @@ export function addReference(ws: Workspace, db: DB, actor: Account, input: Refer
   let file: string | undefined;
   let sha: string | undefined;
   let originalName: string | undefined;
-  let transcriptFile: string | undefined;
   if (input.file) {
     const abs = path.resolve(input.file);
     if (!fs.existsSync(abs)) throw new Error(`파일이 없어요: ${input.file}`);
@@ -66,11 +90,6 @@ export function addReference(ws: Workspace, db: DB, actor: Account, input: Refer
     const dest = path.join(dir, originalName);
     fs.copyFileSync(abs, dest);
     file = ws.rel(dest);
-    if (input.transcriptData !== undefined) {
-      const tf = path.join(dir, 'transcript.json');
-      fs.writeFileSync(tf, JSON.stringify(input.transcriptData, null, 2));
-      transcriptFile = ws.rel(tf);
-    }
   }
   const r: Reference = {
     id: newId('ref'),
@@ -87,11 +106,10 @@ export function addReference(ws: Workspace, db: DB, actor: Account, input: Refer
     sha256: sha,
     originalName,
     media: input.media,
-    transcriptFile,
-    transcriptIssues: input.transcriptIssues,
     createdAt: now(),
     ...ownedBy(actor),
   };
+  applyAnalysis(ws, r, input);
   db.references.push(r);
   return r;
 }
@@ -151,6 +169,7 @@ export function contextToMarkdown(ctx: ReturnType<typeof generationContext>, db:
     lines.push(`- 범위: ${r.scope === 'common' ? '공통' : `개인(${owner(r.ownerId)})`} · 출처: ${r.source}${r.url ? ` (${r.url})` : ''} · 게재 ${r.runDays ?? '?'}일`);
     if (tags) lines.push(`- 태그: ${tags}`);
     if (r.transcript) lines.push(`- 대사: ${r.transcript}`);
+    if (r.screenText) lines.push(`- 화면 글자: ${r.screenText.replace(/\n/g, ' / ')}`);
     if (r.notes) lines.push(`- 메모: ${r.notes}`);
     lines.push('');
   }
